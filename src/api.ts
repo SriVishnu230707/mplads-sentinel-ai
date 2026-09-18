@@ -1,6 +1,7 @@
 // Keep the frontend and API on the same site in development so the HttpOnly
 // refresh cookie survives reloads under modern third-party-cookie policies.
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1'
+const REQUEST_TIMEOUT_MS = 10_000
 
 export type ApiUser = {
   id: string
@@ -36,7 +37,24 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   const headers = new Headers(init.headers)
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
   if (init.body) headers.set('Content-Type', 'application/json')
-  const response = await fetch(`${API_BASE}${path}`, { ...init, headers, credentials: 'include' })
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers,
+      credentials: 'include',
+      signal: init.signal ?? controller.signal,
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('The Sentinel API did not respond in time. Please try again.')
+    }
+    throw new Error('Unable to reach the Sentinel API. Confirm that the API server is running.')
+  } finally {
+    window.clearTimeout(timeout)
+  }
   if (response.status === 401 && retry && path !== '/auth/login' && path !== '/auth/refresh') {
     const restored = await api.restoreSession()
     if (restored) return request<T>(path, init, false)
