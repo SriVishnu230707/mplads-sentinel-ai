@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     access_token_minutes: int = 15
     refresh_token_days: int = 7
     frontend_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    development_origin_regex: str = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
     auto_seed: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -30,4 +31,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

@@ -40,9 +40,10 @@ def set_refresh_cookie(response: Response, refresh_token: str) -> None:
 
 @router.post("/login", response_model=AccessToken)
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)) -> AccessToken:
-    user = db.scalar(select(User).where(User.email == payload.email.lower()))
+    normalized_email = payload.email.strip().lower()
+    user = db.scalar(select(User).where(User.email == normalized_email))
     if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
-        record_event(db, action="auth.login", entity_type="session", outcome="denied", details={"email": payload.email.lower()})
+        record_event(db, action="auth.login", entity_type="session", outcome="denied", details={"email": normalized_email})
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     user.last_login_at = datetime.now(timezone.utc)

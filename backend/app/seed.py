@@ -5,33 +5,45 @@ from sqlalchemy.orm import Session
 
 from .models import OrgLevel, Organization, Project, Role, User
 from .risk_engine import evaluate
-from .security import hash_password
+from .security import hash_password, verify_password
 
 
 DEMO_PASSWORD = "Sentinel@2026"
 
 
 def seed_demo_data(db: Session) -> None:
-    if db.scalar(select(Organization.id).limit(1)):
-        return
+    def ensure_organization(name: str, level: OrgLevel, *, state: str | None = None, district: str | None = None, parent_id: str | None = None) -> Organization:
+        organization = db.scalar(select(Organization).where(Organization.name == name))
+        if organization is None:
+            organization = Organization(name=name, level=level, state=state, district=district, parent_id=parent_id)
+            db.add(organization)
+            db.flush()
+        return organization
 
-    national = Organization(name="Ministry of Statistics and PI", level=OrgLevel.NATIONAL)
-    db.add(national)
-    db.flush()
-    karnataka = Organization(name="Karnataka State Nodal Authority", level=OrgLevel.STATE, state="Karnataka", parent_id=national.id)
-    db.add(karnataka)
-    db.flush()
-    bengaluru = Organization(name="Bengaluru Rural District Authority", level=OrgLevel.DISTRICT, state="Karnataka", district="Bengaluru Rural", parent_id=karnataka.id)
-    db.add(bengaluru)
-    db.flush()
+    national = ensure_organization("Ministry of Statistics and PI", OrgLevel.NATIONAL)
+    karnataka = ensure_organization("Karnataka State Nodal Authority", OrgLevel.STATE, state="Karnataka", parent_id=national.id)
+    bengaluru = ensure_organization("Bengaluru Rural District Authority", OrgLevel.DISTRICT, state="Karnataka", district="Bengaluru Rural", parent_id=karnataka.id)
 
-    users = [
-        User(email="ministry@sentinel.gov.in", full_name="Arun Kumar", password_hash=hash_password(DEMO_PASSWORD), role=Role.MINISTRY, organization_id=national.id),
-        User(email="state@sentinel.gov.in", full_name="Meera Rao", password_hash=hash_password(DEMO_PASSWORD), role=Role.STATE, organization_id=karnataka.id),
-        User(email="district@sentinel.gov.in", full_name="Ravi Shetty", password_hash=hash_password(DEMO_PASSWORD), role=Role.DISTRICT, organization_id=bengaluru.id),
-        User(email="auditor@sentinel.gov.in", full_name="Nisha Verma", password_hash=hash_password(DEMO_PASSWORD), role=Role.AUDITOR, organization_id=national.id),
+    demo_users = [
+        ("ministry@sentinel.gov.in", "Arun Kumar", Role.MINISTRY, national.id),
+        ("state@sentinel.gov.in", "Meera Rao", Role.STATE, karnataka.id),
+        ("district@sentinel.gov.in", "Ravi Shetty", Role.DISTRICT, bengaluru.id),
+        ("auditor@sentinel.gov.in", "Nisha Verma", Role.AUDITOR, national.id),
     ]
-    db.add_all(users)
+    for email, full_name, role, organization_id in demo_users:
+        user = db.scalar(select(User).where(User.email == email))
+        if user is None:
+            db.add(User(email=email, full_name=full_name, password_hash=hash_password(DEMO_PASSWORD), role=role, organization_id=organization_id))
+            continue
+
+        credentials_repaired = not verify_password(DEMO_PASSWORD, user.password_hash)
+        user.full_name = full_name
+        user.role = role
+        user.organization_id = organization_id
+        user.is_active = True
+        if credentials_repaired:
+            user.password_hash = hash_password(DEMO_PASSWORD)
+            user.token_version += 1
 
     now = datetime.now(timezone.utc)
     projects = [
@@ -46,5 +58,6 @@ def seed_demo_data(db: Session) -> None:
         project.risk_score = score
         project.risk_level = level
         project.risk_reasons = reasons
-    db.add_all(projects)
+    existing_project_ids = set(db.scalars(select(Project.id).where(Project.id.in_([project.id for project in projects]))).all())
+    db.add_all(project for project in projects if project.id not in existing_project_ids)
     db.commit()

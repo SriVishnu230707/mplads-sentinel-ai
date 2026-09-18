@@ -1,4 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api/v1'
+// Keep the frontend and API on the same site in development so the HttpOnly
+// refresh cookie survives reloads under modern third-party-cookie policies.
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1'
 
 export type ApiUser = {
   id: string
@@ -50,7 +52,7 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
 export const api = {
   async login(email: string, password: string): Promise<ApiUser> {
     const token = await request<{ access_token: string }>('/auth/login', {
-      method: 'POST', body: JSON.stringify({ email, password }),
+      method: 'POST', body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
     }, false)
     accessToken = token.access_token
     return request<ApiUser>('/auth/me')
@@ -75,4 +77,3 @@ export const api = {
     try { await request<void>('/auth/logout', { method: 'POST' }, false) } finally { accessToken = null }
   },
 }
-

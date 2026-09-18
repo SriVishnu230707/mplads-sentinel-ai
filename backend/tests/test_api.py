@@ -6,7 +6,12 @@ os.environ["SECRET_KEY"] = "test-secret-that-is-long-enough-for-tests"
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.database import SessionLocal
+from app.models import User
 from app.seed import DEMO_PASSWORD
+from app.seed import seed_demo_data
+from app.security import hash_password, verify_password
+from sqlalchemy import select
 
 
 def login(client: TestClient, email: str) -> str:
@@ -57,3 +62,47 @@ def test_unauthenticated_requests_are_rejected():
     with TestClient(app) as client:
         response = client.get("/api/v1/projects")
         assert response.status_code == 401
+
+
+def test_antigravity_local_preview_origin_is_authorized():
+    with TestClient(app) as client:
+        response = client.options(
+            "/api/v1/auth/login",
+            headers={
+                "Origin": "http://localhost:4173",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == "http://localhost:4173"
+
+
+def test_demo_seed_repairs_disabled_account_and_stale_password():
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.email == "ministry@sentinel.gov.in"))
+        assert user is not None
+        previous_token_version = user.token_version
+        user.is_active = False
+        user.password_hash = hash_password("obsolete-demo-password")
+        db.commit()
+
+        seed_demo_data(db)
+        db.refresh(user)
+
+        assert user.is_active is True
+        assert verify_password(DEMO_PASSWORD, user.password_hash)
+        assert user.token_version == previous_token_version + 1
+
+
+def test_demo_seed_repairs_malformed_legacy_hash():
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.email == "state@sentinel.gov.in"))
+        assert user is not None
+        user.password_hash = "not-a-supported-password-hash"
+        db.commit()
+
+        seed_demo_data(db)
+        db.refresh(user)
+
+        assert verify_password(DEMO_PASSWORD, user.password_hash)

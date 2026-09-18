@@ -17,7 +17,12 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, hashed: str) -> bool:
-    return password_hash.verify(password, hashed)
+    try:
+        return password_hash.verify(password, hashed)
+    except Exception:
+        # A malformed legacy hash must fail closed instead of turning a bad
+        # credential row into a 500 response during login or demo repair.
+        return False
 
 
 def hash_token(token: str) -> str:
@@ -58,4 +63,3 @@ def decode_token(token: str, expected_type: str) -> dict:
     if payload.get("type") != expected_type:
         raise jwt.InvalidTokenError("Incorrect token type")
     return payload
-
