@@ -23,7 +23,7 @@ cd ..
 npm run dev:api
 ```
 
-The API runs at `http://127.0.0.1:8000`; interactive documentation is available at `/docs`. Keep this terminal running and start `npm run dev` in a second terminal.
+The API runs at `http://localhost:8000`; interactive documentation is available at `/docs`. Keep this terminal running and start `npm run dev` in a second terminal. Using `localhost` for both services keeps the development refresh cookie first-party, including on Antigravity preview ports.
 
 For a quick college demonstration, SQLite is used automatically. To move to PostgreSQL, start `docker compose up -d postgres` and set `DATABASE_URL=postgresql+psycopg://sentinel:sentinel_local_only@localhost:5432/mplads_sentinel` in `backend/.env`.
 
@@ -73,4 +73,4 @@ npm run build
 npm run test:api
 ```
 
-Current result: frontend build succeeds and all six API/security tests pass.
+Current result: frontend build succeeds and all nine API/security tests pass.
