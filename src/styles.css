@@ -86,6 +86,7 @@ kbd { background:var(--surface); border:1px solid var(--line); border-radius:5px
 .button, .role-switcher { height:40px; border-radius:9px; padding:0 13px; display:inline-flex; align-items:center; justify-content:center; gap:7px; border:1px solid var(--line); cursor:pointer; font-weight:700; font-size:12px; white-space:nowrap; }
 .button.primary { background:var(--green-800); border-color:var(--green-800); color:white; box-shadow:0 5px 14px rgba(16,80,71,.16); }
 .button.primary:hover { background:var(--green-700); }
+.button:disabled { opacity:.65; cursor:wait; box-shadow:none; }
 .button.secondary, .role-switcher { background:var(--surface); color:var(--ink); }
 .role-switcher select { border:0; outline:0; appearance:none; background:transparent; color:var(--ink); max-width:175px; font-weight:700; font-size:12px; }
 .card { background:var(--surface); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); }

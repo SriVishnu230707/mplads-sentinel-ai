@@ -59,6 +59,7 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
   const role = roleLabels[user.role]
   const [projectData, setProjectData] = useState<Project[]>(demoProjects)
   const [scanMessage, setScanMessage] = useState('')
+  const [scanning, setScanning] = useState(false)
   const [dark, setDark] = useState(() => {
     const savedTheme = localStorage.getItem('sentinel-theme')
     return savedTheme ? savedTheme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -96,12 +97,18 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
   useEffect(() => { loadProjects().catch(() => setScanMessage('API unavailable — showing demonstration data')) }, [])
 
   const runScan = async () => {
+    if (scanning) return
+    setScanning(true)
     setScanMessage('Scanning authorized portfolio…')
     try {
       const result = await api.scan()
       await loadProjects()
       setScanMessage(`${result.projects_scanned} works scanned · ${result.alerts_created} new alerts`)
-    } catch (error) { setScanMessage(error instanceof Error ? error.message : 'Risk scan failed') }
+    } catch (error) {
+      setScanMessage(error instanceof Error ? error.message : 'Risk scan failed')
+    } finally {
+      setScanning(false)
+    }
   }
 
   const filtered = useMemo(() => {
@@ -179,7 +186,7 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
             {page !== 'profile' && <div className="heading-actions">
               <div className="role-switcher secure-scope"><LockKeyhole size={16}/><span>{user.organization.name}</span></div>
               <button className="button secondary"><Download size={17} /> Export view</button>
-              <button className="button primary" onClick={runScan}><Sparkles size={17} /> Run risk scan</button>
+              <button className="button primary" onClick={runScan} disabled={scanning} aria-busy={scanning}><Sparkles size={17} /> {scanning ? 'Scanning…' : 'Run risk scan'}</button>
             </div>}
           </div>
 
