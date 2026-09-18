@@ -59,7 +59,10 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
   const role = roleLabels[user.role]
   const [projectData, setProjectData] = useState<Project[]>(demoProjects)
   const [scanMessage, setScanMessage] = useState('')
-  const [dark, setDark] = useState(false)
+  const [dark, setDark] = useState(() => {
+    const savedTheme = localStorage.getItem('sentinel-theme')
+    return savedTheme ? savedTheme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
+  })
   const [collapsed, setCollapsed] = useState(false)
   const [mobileMenu, setMobileMenu] = useState(false)
   const [search, setSearch] = useState('')
@@ -69,6 +72,7 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
   // Sync dark mode with <html> so body/viewport background matches
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
+    localStorage.setItem('sentinel-theme', dark ? 'dark' : 'light')
     return () => { document.documentElement.classList.remove('dark') }
   }, [dark])
 
@@ -152,7 +156,7 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
             <kbd>⌘ K</kbd>
           </div>
           <div className="top-actions">
-            <button className="icon-button" onClick={() => setDark(v => !v)} aria-label="Toggle dark mode">{dark ? <Sun size={19} /> : <Moon size={19} />}</button>
+            <button className="icon-button" onClick={() => setDark(v => !v)} aria-label={`Switch to ${dark ? 'light' : 'dark'} mode`} aria-pressed={dark}>{dark ? <Sun size={19} /> : <Moon size={19} />}</button>
             <button className="icon-button notification" aria-label="Notifications"><Bell size={19} /><span /></button>
             <div className="divider" />
             <div className="profile">
