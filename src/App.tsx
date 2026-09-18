@@ -5,12 +5,13 @@ import {
   ClipboardCheck, Clock3, Download, FileSearch, Filter, FolderKanban, Gauge,
   IndianRupee, LayoutDashboard, LockKeyhole, Map, Menu, Moon,
   Network, PanelLeftClose, Search, Settings, ShieldCheck, Sparkles, Sun,
-  Users, X, Zap, LogOut, Eye, EyeOff,
+  Users, X, Zap, LogOut, Eye, EyeOff, UserRound, Mail, MapPin, Fingerprint,
+  KeyRound, BadgeCheck, Globe2, BriefcaseBusiness,
 } from 'lucide-react'
 import { activity, projects as demoProjects, states, trend, type Project, type RiskLevel } from './data'
 import { api, type ApiProject, type ApiUser } from './api'
 
-type Page = 'overview' | 'alerts' | 'projects' | 'map' | 'cases' | 'reports' | 'admin'
+type Page = 'overview' | 'alerts' | 'projects' | 'map' | 'cases' | 'reports' | 'admin' | 'profile'
 type Role = 'Ministry National Supervisor' | 'State Nodal Authority' | 'District Authority' | 'Auditor / Investigator'
 
 const nav: { id: Page; label: string; icon: typeof LayoutDashboard; count?: number }[] = [
@@ -36,6 +37,7 @@ const greeting = (name: string): string => {
 
 const pageDescriptions: Record<Page, string> = {
   overview: '', alerts: 'Prioritized, explainable signals that need human attention.', projects: 'Monitor financial and physical execution in one place.', map: 'Discover geographic clusters, overlaps and possible duplicate works.', cases: 'Track every investigation from triage to independently approved closure.', reports: 'Generate decision-ready summaries without manual spreadsheet work.', admin: 'Manage access, rule versions and platform accountability.',
+  profile: 'Review your official identity, jurisdiction and session security.',
 }
 
 const roleLabels: Record<ApiUser['role'], Role> = {
@@ -154,8 +156,10 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
             <button className="icon-button notification" aria-label="Notifications"><Bell size={19} /><span /></button>
             <div className="divider" />
             <div className="profile">
-              <div className="avatar">{user.full_name.split(' ').map(x => x[0]).slice(0, 2).join('')}</div>
-              <div className="profile-copy"><strong>{user.full_name}</strong><span>{role}</span></div>
+              <button className={`profile-trigger ${page === 'profile' ? 'active' : ''}`} onClick={() => setPage('profile')} aria-label={`Open profile for ${user.full_name}`} aria-current={page === 'profile' ? 'page' : undefined}>
+                <div className="avatar">{user.full_name.split(' ').map(x => x[0]).slice(0, 2).join('')}</div>
+                <div className="profile-copy"><strong>{user.full_name}</strong><span>{role}</span></div>
+              </button>
               <button className="icon-button" onClick={onLogout} aria-label="Sign out" title="Sign out"><LogOut size={17}/></button>
             </div>
           </div>
@@ -164,15 +168,15 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
         <div className="content">
           <div className="page-heading">
             <div>
-              <div className="eyebrow"><span className="status-dot" /> Live national overview</div>
-              <h1>{page === 'overview' ? greeting(user.full_name) : nav.find(n => n.id === page)?.label}</h1>
+              <div className="eyebrow"><span className="status-dot" /> {page === 'profile' ? 'Verified official identity' : 'Live national overview'}</div>
+              <h1>{page === 'overview' ? greeting(user.full_name) : page === 'profile' ? 'My profile' : nav.find(n => n.id === page)?.label}</h1>
               <p>{page === 'overview' ? 'Here is what requires attention across MPLADS today.' : pageDescriptions[page]}</p>
             </div>
-            <div className="heading-actions">
+            {page !== 'profile' && <div className="heading-actions">
               <div className="role-switcher secure-scope"><LockKeyhole size={16}/><span>{user.organization.name}</span></div>
               <button className="button secondary"><Download size={17} /> Export view</button>
               <button className="button primary" onClick={runScan}><Sparkles size={17} /> Run risk scan</button>
-            </div>
+            </div>}
           </div>
 
           {scanMessage && <div className="system-message"><ShieldCheck size={16}/>{scanMessage}<button onClick={() => setScanMessage('')}><X size={15}/></button></div>}
@@ -184,6 +188,7 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
           {page === 'cases' && <CasesView />}
           {page === 'reports' && <ReportsView />}
           {page === 'admin' && <AdminView />}
+          {page === 'profile' && <ProfileView user={user} role={role} onLogout={onLogout} />}
         </div>
       </main>
 
@@ -306,6 +311,69 @@ function AdminView() {
     { icon: Building2, title: 'Organizations', text: 'Maintain state, district and implementing-agency hierarchy.', value: '4,912 units' },
   ]
   return <section className="admin-grid">{settings.map(({icon: Icon, title, text, value}) => <button className="card admin-card" key={title}><span className="admin-icon"><Icon size={21}/></span><div><h2>{title}</h2><p>{text}</p><strong>{value}</strong></div><ChevronRight size={18}/></button>)}</section>
+}
+
+function ProfileView({ user, role, onLogout }: { user: ApiUser; role: Role; onLogout: () => void }) {
+  const initials = user.full_name.split(' ').map(part => part[0]).slice(0, 2).join('')
+  const jurisdiction = user.organization.level === 'national'
+    ? 'All India'
+    : [user.organization.district, user.organization.state].filter(Boolean).join(', ')
+  const scopeDescription = user.organization.level === 'national'
+    ? 'Authorized to review the national project portfolio.'
+    : user.organization.level === 'state'
+      ? `Authorized to review projects within ${user.organization.state}.`
+      : `Authorized to review projects within ${user.organization.district} district.`
+
+  return <div className="profile-page">
+    <section className="card profile-identity-card">
+      <div className="profile-hero">
+        <div className="profile-avatar-large" aria-hidden="true">{initials}</div>
+        <div className="profile-hero-copy">
+          <span className="verified-label"><BadgeCheck size={15}/> Identity verified</span>
+          <h2>{user.full_name}</h2>
+          <p>{role}</p>
+          <span className="official-email"><Mail size={15}/>{user.email}</span>
+        </div>
+        <div className="account-state"><i/><span>Account active</span></div>
+      </div>
+      <div className="profile-id-strip">
+        <span>User reference</span><code>{user.id}</code>
+      </div>
+    </section>
+
+    <div className="profile-details-grid">
+      <section className="card profile-section-card">
+        <div className="profile-section-heading"><span><BriefcaseBusiness size={19}/></span><div><h2>Official assignment</h2><p>Your role and administrative placement</p></div></div>
+        <dl className="profile-facts">
+          <div><dt>Role</dt><dd>{role}</dd></div>
+          <div><dt>Organization</dt><dd>{user.organization.name}</dd></div>
+          <div><dt>Authority level</dt><dd className="capitalize">{user.organization.level}</dd></div>
+          <div><dt>Organization reference</dt><dd className="mono-value">{user.organization.id}</dd></div>
+        </dl>
+      </section>
+
+      <section className="card profile-section-card">
+        <div className="profile-section-heading"><span><Globe2 size={19}/></span><div><h2>Data jurisdiction</h2><p>Scope enforced by the backend</p></div></div>
+        <div className="jurisdiction-summary"><MapPin size={21}/><div><span>Authorized geography</span><strong>{jurisdiction}</strong><p>{scopeDescription}</p></div></div>
+        <div className="scope-notice"><LockKeyhole size={15}/><span>Out-of-scope records are hidden at the database query boundary.</span></div>
+      </section>
+
+      <section className="card profile-section-card security-card">
+        <div className="profile-section-heading"><span><Fingerprint size={19}/></span><div><h2>Session security</h2><p>Protections applied to this login</p></div></div>
+        <ul className="security-list">
+          <li><span><KeyRound size={17}/></span><div><strong>Short-lived access</strong><p>Access authorization expires after 15 minutes.</p></div><BadgeCheck size={17}/></li>
+          <li><span><ShieldCheck size={17}/></span><div><strong>Protected renewal</strong><p>Refresh credentials remain in an HttpOnly cookie.</p></div><BadgeCheck size={17}/></li>
+          <li><span><Activity size={17}/></span><div><strong>Audited activity</strong><p>Sign-in and risk operations are recorded.</p></div><BadgeCheck size={17}/></li>
+        </ul>
+      </section>
+
+      <section className="card profile-section-card account-actions-card">
+        <div className="profile-section-heading"><span><UserRound size={19}/></span><div><h2>Account actions</h2><p>Manage this authenticated session</p></div></div>
+        <div className="profile-action-row"><div><strong>Sign out of Sentinel</strong><p>Revokes the current refresh session on this device.</p></div><button className="button danger-button" onClick={onLogout}><LogOut size={16}/> Sign out</button></div>
+        <div className="profile-help"><CircleHelp size={16}/><p>Contact your organization administrator to update your name, role, email or jurisdiction.</p></div>
+      </section>
+    </div>
+  </div>
 }
 
 function ProjectDrawer({ project, onClose }: { project: Project; onClose: () => void }) {
