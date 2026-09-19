@@ -56,11 +56,15 @@ async def import_progress(
     scoped_projects = {project.id: project for project in db.scalars(apply_project_scope(select(Project), user)).all()}
     validated: list[tuple[Project, float, int, datetime]] = []
     errors: list[dict[str, str]] = []
+    seen_project_ids: set[str] = set()
     for row_number, row in enumerate(rows, start=2):
         try:
             project = scoped_projects.get((row.get("project_id") or "").strip())
             if not project:
                 raise ValueError("Project is not available within your authorized scope")
+            if project.id in seen_project_ids:
+                raise ValueError("A project may appear only once in an import batch")
+            seen_project_ids.add(project.id)
             spent_lakh = float(row.get("spent_lakh") or "")
             progress = int(row.get("physical_progress") or "")
             evidence_at = parse_iso_datetime(row.get("evidence_at") or "")

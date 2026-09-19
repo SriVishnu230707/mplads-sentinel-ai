@@ -44,3 +44,27 @@ class LoginAttemptLimiter:
 
 
 login_attempt_limiter = LoginAttemptLimiter()
+
+
+class ActionLimiter:
+    """Bound costly local actions until Redis-backed limits are configured."""
+
+    def __init__(self, max_actions: int, window_seconds: int) -> None:
+        self.max_actions = max_actions
+        self.window_seconds = window_seconds
+        self._events: dict[str, deque[float]] = {}
+        self._lock = Lock()
+
+    def allow(self, key: str) -> bool:
+        now = monotonic()
+        with self._lock:
+            events = self._events.setdefault(key, deque())
+            while events and now - events[0] >= self.window_seconds:
+                events.popleft()
+            if len(events) >= self.max_actions:
+                return False
+            events.append(now)
+            return True
+
+
+scan_limiter = ActionLimiter(max_actions=10, window_seconds=300)

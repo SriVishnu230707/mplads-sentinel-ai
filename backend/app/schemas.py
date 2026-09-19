@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from .models import AlertStatus, OrgLevel, RiskLevel, Role
+from .models import AlertStatus, CaseStatus, OrgLevel, RiskLevel, Role
 
 
 class LoginRequest(BaseModel):
@@ -152,6 +152,32 @@ class ImportValidationOut(BaseModel):
     invalid_rows: int
     applied_rows: int
     errors: list[dict[str, str]]
+
+
+class CaseCreate(BaseModel):
+    alert_id: str = Field(min_length=1, max_length=36)
+    owner_id: str | None = Field(default=None, max_length=36)
+
+
+class CaseUpdate(BaseModel):
+    status: CaseStatus
+    closure_note: str | None = Field(default=None, min_length=5, max_length=2000)
+
+
+class CaseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    alert_id: str
+    project_id: str
+    title: str
+    status: CaseStatus
+    priority: RiskLevel
+    owner_id: str | None
+    created_by: str
+    closure_note: str | None
+    closed_by: str | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class DashboardSummary(BaseModel):

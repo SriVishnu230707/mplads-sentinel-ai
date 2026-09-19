@@ -253,3 +253,21 @@ def test_phase4_prediction_evidence_and_import_controls_are_scoped():
         assert rejected.status_code == 200
         assert rejected.json()["invalid_rows"] == 1
         assert rejected.json()["applied_rows"] == 0
+
+
+def test_phase5_case_creation_is_idempotent_and_report_is_scoped():
+    with TestClient(app) as client:
+        token = login(client, "ministry@sentinel.gov.in")
+        headers = {"Authorization": f"Bearer {token}"}
+        client.post("/api/v1/risk/scan", headers=headers)
+        alert = client.get("/api/v1/alerts", headers=headers).json()[0]
+        created = client.post("/api/v1/cases", headers=headers, json={"alert_id": alert["id"]})
+        assert created.status_code == 201
+        assert client.post("/api/v1/cases", headers=headers, json={"alert_id": alert["id"]}).status_code == 409
+        cases = client.get("/api/v1/cases", headers=headers)
+        assert cases.status_code == 200
+        assert cases.json()[0]["project_id"] == alert["project_id"]
+        report = client.get("/api/v1/reports/portfolio.csv", headers=headers)
+        assert report.status_code == 200
+        assert "attachment" in report.headers["content-disposition"]
+        assert "Project ID" in report.text

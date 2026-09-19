@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api import alerts, auth, dashboard, imports, projects
+from .api import alerts, auth, cases, dashboard, imports, projects, reports
 from .config import settings
 from .database import Base, SessionLocal, engine
 from .seed import seed_demo_data
@@ -67,3 +67,5 @@ app.include_router(projects.router, prefix="/api/v1")
 app.include_router(alerts.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(imports.router, prefix="/api/v1")
+app.include_router(cases.router, prefix="/api/v1")
+app.include_router(reports.router, prefix="/api/v1")

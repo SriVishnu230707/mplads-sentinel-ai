@@ -8,6 +8,7 @@ from ..dependencies import apply_project_scope, get_current_user, require_roles
 from ..intelligence import snapshot
 from ..models import Alert, AlertStatus, Project, RiskLevel, Role, User
 from ..risk_engine import evaluate
+from ..rate_limit import scan_limiter
 from ..schemas import AlertOut, AlertReviewRequest, ScanResult
 
 
@@ -33,6 +34,8 @@ def scan_projects(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(Role.MINISTRY, Role.STATE, Role.DISTRICT, Role.AUDITOR)),
 ) -> ScanResult:
+    if not scan_limiter.allow(f"risk-scan:{user.id}"):
+        raise HTTPException(status_code=429, detail="Risk scan limit reached; try again later")
     projects = list(db.scalars(apply_project_scope(select(Project), user)).all())
     created = 0
     updated = 0

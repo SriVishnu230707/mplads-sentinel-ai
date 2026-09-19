@@ -75,6 +75,18 @@ export type ApiEvidence = {
   created_at: string
 }
 
+export type ApiCase = {
+  id: string
+  alert_id: string
+  project_id: string
+  title: string
+  status: 'open' | 'investigating' | 'closure_review' | 'closed'
+  priority: ApiProject['risk_level']
+  owner_id: string | null
+  created_at: string
+  updated_at: string
+}
+
 let accessToken: string | null = null
 let refreshPromise: Promise<boolean> | null = null
 
@@ -153,6 +165,17 @@ export const api = {
   updateAlert: (alertId: string, status: ApiAlert['status']) => request<ApiAlert>(`/alerts/${encodeURIComponent(alertId)}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   dashboardSummary: () => request<ApiDashboardSummary>('/dashboard/summary'),
   scan: () => request<{ projects_scanned: number; alerts_created: number; scores_updated: number }>('/risk/scan', { method: 'POST' }),
+  cases: () => request<ApiCase[]>('/cases'),
+  createCase: (alertId: string) => request<ApiCase>('/cases', { method: 'POST', body: JSON.stringify({ alert_id: alertId }) }),
+  updateCase: (caseId: string, status: ApiCase['status'], closureNote?: string) => request<ApiCase>(`/cases/${encodeURIComponent(caseId)}`, { method: 'PATCH', body: JSON.stringify({ status, closure_note: closureNote }) }),
+  async downloadPortfolioReport(): Promise<{ blob: Blob; filename: string }> {
+    const headers = new Headers()
+    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+    const response = await fetch(`${API_BASE}/reports/portfolio.csv`, { headers, credentials: 'include' })
+    if (!response.ok) throw new Error('Unable to generate the authorized portfolio report')
+    const filename = response.headers.get('content-disposition')?.match(/filename="?([^";]+)"?/)?.[1] ?? 'mplads-portfolio.csv'
+    return { blob: await response.blob(), filename }
+  },
 
   async logout(): Promise<void> {
     try { await request<void>('/auth/logout', { method: 'POST' }, false) } finally { accessToken = null }
