@@ -8,7 +8,7 @@ import {
   Users, X, Zap, LogOut, Eye, EyeOff, UserRound, Mail, MapPin, Fingerprint,
   KeyRound, BadgeCheck, Globe2, BriefcaseBusiness,
 } from 'lucide-react'
-import { activity, states, trend, type Project, type RiskLevel } from './data'
+import { activity, type Project, type RiskLevel } from './data'
 import { api, type ApiAlert, type ApiDashboardSummary, type ApiDelayPrediction, type ApiProject, type ApiProjectIntelligence, type ApiUser } from './api'
 
 type Page = 'overview' | 'alerts' | 'projects' | 'map' | 'cases' | 'reports' | 'admin' | 'profile'
@@ -206,7 +206,7 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
           {page === 'projects' && <ProjectsView projects={filtered} onSelect={setSelected} />}
           {page === 'map' && <MapView projects={filtered} onSelect={setSelected} />}
           {page === 'cases' && <CasesView />}
-          {page === 'reports' && <ReportsView />}
+          {page === 'reports' && <ReportsView projects={filtered} />}
           {page === 'admin' && <AdminView />}
           {page === 'profile' && <ProfileView user={user} role={role} onLogout={onLogout} />}
         </div>
@@ -234,7 +234,7 @@ function Overview({ projects, summary, onSelect }: { projects: Project[]; summar
     <section className="dashboard-grid">
       <div className="card risk-trend-card">
         <CardHeader title="Risk intelligence trend" subtitle="Detected vs. resolved signals · last 6 months" action="View analytics" />
-        <TrendChart />
+        <TrendChart projects={projects} />
       </div>
       <div className="card map-card">
         <CardHeader title="National risk distribution" subtitle="Live project-risk concentration" action="Open map" />
@@ -260,7 +260,11 @@ function Overview({ projects, summary, onSelect }: { projects: Project[]; summar
     <section className="card state-card">
       <CardHeader title="State performance watch" subtitle="Relative risk based on active work portfolio" action="Compare all states" />
       <div className="state-list">
-        {states.map((state, i) => <div className="state-row" key={state.name}><span className="rank">{String(i + 1).padStart(2, '0')}</span><div className="state-name"><strong>{state.name}</strong><span>{state.projects.toLocaleString('en-IN')} active works</span></div><div className="bar-track"><span style={{ width: `${state.score}%` }} /></div><strong className="risk-number">{state.highRisk}</strong><span className="muted-label">high risk</span><ChevronRight size={17} /></div>)}
+        {Object.values(projects.reduce<Record<string, { name: string; projects: number; highRisk: number; score: number }>>((groups, project) => {
+          const item = groups[project.state] ?? { name: project.state, projects: 0, highRisk: 0, score: 0 }
+          item.projects += 1; item.highRisk += project.level === 'Critical' || project.level === 'High' ? 1 : 0; item.score += project.risk
+          groups[project.state] = item; return groups
+        }, {})).sort((a, b) => (b.score / b.projects) - (a.score / a.projects)).map((state, i) => <div className="state-row" key={state.name}><span className="rank">{String(i + 1).padStart(2, '0')}</span><div className="state-name"><strong>{state.name}</strong><span>{state.projects.toLocaleString('en-IN')} authorized works</span></div><div className="bar-track"><span style={{ width: `${Math.round(state.score / state.projects)}%` }} /></div><strong className="risk-number">{state.highRisk}</strong><span className="muted-label">high risk</span><ChevronRight size={17} /></div>)}
       </div>
     </section>
   </>
@@ -274,11 +278,11 @@ function CardHeader({ title, subtitle, action }: { title: string; subtitle: stri
   return <div className="card-header"><div><h2>{title}</h2><p>{subtitle}</p></div>{action && <button className="text-button">{action}<ChevronRight size={15} /></button>}</div>
 }
 
-function TrendChart() {
-  const max = 90
-  const pointsA = trend.map((d, i) => `${42 + i * 86},${160 - (d.detected / max) * 120}`).join(' ')
-  const pointsB = trend.map((d, i) => `${42 + i * 86},${160 - (d.resolved / max) * 120}`).join(' ')
-  return <div className="chart-wrap"><div className="chart-legend"><span><i className="dot detected" />Risk detected</span><span><i className="dot resolved" />Resolved</span><b>+18.6% resolution rate</b></div><svg viewBox="0 0 520 190" role="img" aria-label="Risk intelligence trend line chart"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#df6b58" stopOpacity=".28"/><stop offset="1" stopColor="#df6b58" stopOpacity="0"/></linearGradient></defs>{[40,80,120,160].map(y => <line key={y} x1="42" x2="478" y1={y} y2={y} className="grid-line"/>)}<polygon points={`42,160 ${pointsA} 472,160`} fill="url(#area)"/><polyline points={pointsA} className="line detected-line"/><polyline points={pointsB} className="line resolved-line"/>{trend.map((d, i) => <g key={d.month}><text x={42 + i * 86} y="183" textAnchor="middle">{d.month}</text><circle cx={42 + i * 86} cy={160 - (d.detected / max) * 120} r="3.8" className="point detected-point"/><circle cx={42 + i * 86} cy={160 - (d.resolved / max) * 120} r="3.8" className="point resolved-point"/></g>)}</svg></div>
+function TrendChart({ projects }: { projects: Project[] }) {
+  const bands: RiskLevel[] = ['Low', 'Moderate', 'High', 'Critical']
+  const values = bands.map(level => projects.filter(project => project.level === level).length)
+  const max = Math.max(1, ...values)
+  return <div className="chart-wrap"><div className="chart-legend"><span><i className="dot detected" />Live risk distribution</span><b>{projects.length} authorized works</b></div><svg viewBox="0 0 520 190" role="img" aria-label="Live project risk distribution"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#df6b58" stopOpacity=".28"/><stop offset="1" stopColor="#df6b58" stopOpacity="0"/></linearGradient></defs>{[40,80,120,160].map(y => <line key={y} x1="42" x2="478" y1={y} y2={y} className="grid-line"/>)}{bands.map((band, i) => { const height = values[i] / max * 118; const x = 70 + i * 105; return <g key={band}><rect x={x} y={160 - height} width="52" height={height} rx="7" fill={band === 'Critical' ? '#d4584c' : band === 'High' ? '#df8d37' : band === 'Moderate' ? '#d8a42e' : '#3f9d7f'}/><text x={x + 26} y="183" textAnchor="middle">{band}</text><text x={x + 26} y={151 - height} textAnchor="middle">{values[i]}</text></g>})}</svg></div>
 }
 
 function RiskMap({ projects, onSelect }: { projects: Project[]; onSelect: (p: Project) => void }) {
@@ -302,7 +306,11 @@ function ProjectsView({ projects, onSelect }: { projects: Project[]; onSelect: (
 }
 
 function MapView({ projects, onSelect }: { projects: Project[]; onSelect: (p: Project) => void }) {
-  return <section className="map-page"><aside className="map-panel card"><h2>Intelligence layers</h2><p>Combine evidence to uncover spatial patterns.</p>{['Risk severity', 'Possible duplicate works', 'Payment–progress mismatch', 'Inspection coverage', 'Citizen signals'].map((x, i) => <label key={x}><input type="checkbox" defaultChecked={i < 2}/><span>{x}</span><small>{[482, 64, 127, 318, 91][i]}</small></label>)}<div className="panel-separator"/><h3>Selected geography</h3><button className="select-like">All India <ChevronDown size={15}/></button><button className="button primary full-button"><FileSearch size={17}/> Analyze visible area</button></aside><div className="card large-map"><div className="map-toolbar"><button className="active">Risk</button><button>Satellite</button><button>District</button><span/><button><Filter size={16}/> Filter</button></div><RiskMap projects={projects} onSelect={onSelect}/><div className="map-insight"><Zap size={17}/><div><strong>Spatial insight</strong><p>3 possible duplicate clusters detected within the visible area.</p></div><ChevronRight size={17}/></div></div></section>
+  const [visibleLevels, setVisibleLevels] = useState<RiskLevel[]>(['Critical', 'High', 'Moderate', 'Low'])
+  const [message, setMessage] = useState('Select a pin to open its verified project intelligence.')
+  const visible = projects.filter(project => visibleLevels.includes(project.level))
+  const toggle = (level: RiskLevel) => setVisibleLevels(current => current.includes(level) ? current.filter(item => item !== level) : [...current, level])
+  return <section className="map-page"><aside className="map-panel card"><h2>Live intelligence layers</h2><p>Map pins are plotted from authorized project coordinates, not sample locations.</p>{(['Critical', 'High', 'Moderate', 'Low'] as RiskLevel[]).map(level => <label key={level}><input type="checkbox" checked={visibleLevels.includes(level)} onChange={() => toggle(level)}/><span>{level} risk works</span><small>{projects.filter(project => project.level === level).length}</small></label>)}<div className="panel-separator"/><h3>Visible portfolio</h3><button className="select-like">{visible.length} of {projects.length} works <ChevronDown size={15}/></button><button className="button primary full-button" onClick={() => setMessage(`${visible.length} works visible · ${visible.filter(project => project.level === 'Critical' || project.level === 'High').length} require priority review.`)}><FileSearch size={17}/> Analyze visible area</button></aside><div className="card large-map"><div className="map-toolbar"><button className="active">Risk</button><span/><button><Filter size={16}/> Live filters</button></div><RiskMap projects={visible} onSelect={onSelect}/><div className="map-insight"><Zap size={17}/><div><strong>Spatial intelligence</strong><p>{message}</p></div></div></div></section>
 }
 
 function CasesView() {
@@ -314,14 +322,21 @@ function CasesView() {
   return <><section className="workflow-strip">{['New', 'Triaged', 'Evidence requested', 'Verification', 'Closure review'].map((x, i) => <div key={x}><span>{[31,18,17,12,6][i]}</span><strong>{x}</strong>{i < 4 && <ChevronRight size={17}/>}</div>)}</section><section className="card case-list"><CardHeader title="Active investigations" subtitle="Cases requiring action, ordered by service-level risk" action="View case register"/>{cases.map(c => <article className="case-row" key={c.id}><div className="case-icon"><ClipboardCheck size={19}/></div><div className="case-main"><span>{c.id}</span><strong>{c.title}</strong><p>{c.owner}</p></div><div className="case-status"><span>{c.status}</span><small>Open for {c.age}</small></div><div className="sla"><div><span style={{ width: `${c.sla}%` }}/></div><small>SLA {c.sla}% used</small></div><button className="row-action"><ChevronRight size={18}/></button></article>)}</section></>
 }
 
-function ReportsView() {
+function ReportsView({ projects }: { projects: Project[] }) {
+  const [generated, setGenerated] = useState<string[]>([])
+  const download = (title: string) => {
+    const rows = [['Project ID', 'Title', 'State', 'District', 'Risk score', 'Risk level', 'Sanctioned lakh', 'Spent lakh', 'Progress %', 'Primary signal'], ...projects.map(project => [project.id, project.title, project.state, project.district, String(project.risk), project.level, String(project.sanctioned), String(project.spent), String(project.progress), project.issue])]
+    const csv = rows.map(row => row.map(value => `"${value.replaceAll('"', '""')}"`).join(',')).join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = `${title.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}-portfolio.csv`; link.click(); URL.revokeObjectURL(url)
+    setGenerated(current => [title, ...current.filter(item => item !== title)])
+  }
   const reports = [
     { icon: Gauge, title: 'National risk briefing', text: 'Executive overview of emerging risks and state performance.', tag: 'Daily' },
     { icon: IndianRupee, title: 'Fund utilization analysis', text: 'Allocation, expenditure and unusual financial patterns.', tag: 'Monthly' },
     { icon: Clock3, title: 'Delay and completion outlook', text: 'Forecasted delay risk and intervention opportunities.', tag: 'Weekly' },
     { icon: Network, title: 'Vendor relationship review', text: 'Concentration, shared identities and network anomalies.', tag: 'Quarterly' },
   ]
-  return <><section className="report-grid">{reports.map(({icon: Icon, title, text, tag}) => <article className="card report-card" key={title}><div className="report-icon"><Icon size={22}/></div><span className="report-tag">{tag}</span><h2>{title}</h2><p>{text}</p><button className="button secondary">Generate report <ChevronRight size={16}/></button></article>)}</section><section className="card report-history"><CardHeader title="Recent reports" subtitle="Generated reports are watermarked and access-logged"/><div className="empty-state"><FileSearch size={30}/><strong>Select a report template to begin</strong><p>Exports respect your role, jurisdiction and field-level permissions.</p></div></section></>
+  return <><section className="report-grid">{reports.map(({icon: Icon, title, text, tag}) => <article className="card report-card" key={title}><div className="report-icon"><Icon size={22}/></div><span className="report-tag">{tag}</span><h2>{title}</h2><p>{text}</p><button className="button secondary" onClick={() => download(title)}>Download CSV <Download size={16}/></button></article>)}</section><section className="card report-history"><CardHeader title="Generated reports" subtitle="Exports contain only your currently authorized project portfolio"/>{generated.length ? <div className="activity-list">{generated.map(title => <div className="activity-item" key={title}><span className="activity-icon teal"><Download size={15}/></span><div><strong>{title}</strong><p>CSV export generated from {projects.length} live, authorized project records.</p></div><time>Just now</time></div>)}</div> : <div className="empty-state"><FileSearch size={30}/><strong>Select a report template to begin</strong><p>Exports respect your role and jurisdiction.</p></div>}</section></>
 }
 
 function AdminView() {
