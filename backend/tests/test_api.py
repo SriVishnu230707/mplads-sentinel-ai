@@ -156,8 +156,58 @@ def test_authorized_user_can_start_alert_review():
         token = login(client, "ministry@sentinel.gov.in")
         headers = {"Authorization": f"Bearer {token}"}
         client.post("/api/v1/risk/scan", headers=headers)
-        alerts = client.get("/api/v1/alerts", headers=headers).json()
+        alerts = client.get("/api/v1/alerts?status=open", headers=headers).json()
         assert alerts
         review = client.patch(f"/api/v1/alerts/{alerts[0]['id']}", headers=headers, json={"status": "triaged"})
         assert review.status_code == 200
         assert review.json()["status"] == "triaged"
+
+
+def test_login_attempts_are_rate_limited_without_revealing_account_state():
+    with TestClient(app) as client:
+        for _ in range(5):
+            denied = client.post("/api/v1/auth/login", json={"email": "unknown-security-test@sentinel.gov.in", "password": "incorrect-password"})
+            assert denied.status_code == 401
+            assert denied.json()["detail"] == "Invalid email or password"
+
+        limited = client.post("/api/v1/auth/login", json={"email": "unknown-security-test@sentinel.gov.in", "password": "incorrect-password"})
+        assert limited.status_code == 429
+        assert limited.headers["retry-after"]
+
+
+def test_alert_lifecycle_requires_authorized_closure_and_avoids_duplicate_open_alerts():
+    with TestClient(app) as client:
+        district_token = login(client, "district@sentinel.gov.in")
+        district_headers = {"Authorization": f"Bearer {district_token}"}
+        client.post("/api/v1/risk/scan", headers=district_headers)
+        district_alerts = client.get("/api/v1/alerts?status=open", headers=district_headers).json()
+        assert district_alerts
+        alert = district_alerts[0]
+
+        triaged = client.patch(f"/api/v1/alerts/{alert['id']}", headers=district_headers, json={"status": "triaged"})
+        assert triaged.status_code == 200
+        assert triaged.json()["status"] == "triaged"
+
+        forbidden = client.patch(f"/api/v1/alerts/{alert['id']}", headers=district_headers, json={"status": "resolved"})
+        assert forbidden.status_code == 403
+
+        client.post("/api/v1/risk/scan", headers=district_headers)
+        open_alerts = client.get("/api/v1/alerts?status=open", headers=district_headers).json()
+        assert not any(item["project_id"] == alert["project_id"] and item["rule_code"] == alert["rule_code"] for item in open_alerts)
+
+        ministry_token = login(client, "ministry@sentinel.gov.in")
+        ministry_headers = {"Authorization": f"Bearer {ministry_token}"}
+        resolved = client.patch(f"/api/v1/alerts/{alert['id']}", headers=ministry_headers, json={"status": "resolved"})
+        assert resolved.status_code == 200
+        assert resolved.json()["status"] == "resolved"
+
+
+def test_api_security_headers_are_present_on_protected_responses():
+    with TestClient(app) as client:
+        token = login(client, "auditor@sentinel.gov.in")
+        response = client.get("/api/v1/projects", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 200
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["x-frame-options"] == "DENY"
+        assert response.headers["content-security-policy"] == "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        assert response.headers["permissions-policy"] == "camera=(), geolocation=(), microphone=()"

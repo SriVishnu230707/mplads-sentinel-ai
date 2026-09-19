@@ -43,7 +43,12 @@ def scan_projects(
             project.version += 1
             db.add(snapshot(project))
             updated += 1
-        existing = set(db.scalars(select(Alert.rule_code).where(Alert.project_id == project.id, Alert.status == AlertStatus.OPEN)).all())
+        existing = set(db.scalars(
+            select(Alert.rule_code).where(
+                Alert.project_id == project.id,
+                Alert.status.in_([AlertStatus.OPEN, AlertStatus.TRIAGED]),
+            )
+        ).all())
         for reason in reasons:
             if reason["rule_code"] in existing:
                 continue
@@ -66,6 +71,36 @@ def update_alert_status(
     alert = db.scalar(select(Alert).where(Alert.id == alert_id, Alert.project_id.in_(scoped_project_ids)))
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
+    allowed_transitions = {
+        AlertStatus.OPEN: {AlertStatus.TRIAGED},
+        AlertStatus.TRIAGED: {AlertStatus.RESOLVED, AlertStatus.DISMISSED},
+    }
+    if payload.status not in allowed_transitions.get(alert.status, set()):
+        raise HTTPException(status_code=409, detail="This alert status transition is not allowed")
+    if payload.status in {AlertStatus.RESOLVED, AlertStatus.DISMISSED} and user.role not in {Role.MINISTRY, Role.AUDITOR}:
+        raise HTTPException(status_code=403, detail="Only Ministry or Auditor roles can close an alert")
+    duplicate = db.scalar(select(Alert).where(
+        Alert.project_id == alert.project_id,
+        Alert.rule_code == alert.rule_code,
+        Alert.status == payload.status,
+        Alert.id != alert.id,
+    ))
+    if duplicate:
+        # Older prototype versions allowed one open and one triaged row for the
+        # same rule. Keep the more advanced review state and remove only the
+        # obsolete duplicate, while retaining a trace in the audit log.
+        db.delete(alert)
+        record_event(
+            db,
+            action="alert.deduplicated",
+            entity_type="alert",
+            entity_id=duplicate.id,
+            actor_id=user.id,
+            details={"removed_alert_id": alert.id, "status": payload.status.value},
+        )
+        db.commit()
+        db.refresh(duplicate)
+        return duplicate
     alert.status = payload.status
     record_event(db, action="alert.review", entity_type="alert", entity_id=alert.id, actor_id=user.id, details={"status": payload.status.value})
     db.commit()

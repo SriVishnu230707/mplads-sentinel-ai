@@ -62,6 +62,9 @@ npm run preview
 - Query-level jurisdiction enforcement
 - Rotating refresh sessions in an HttpOnly cookie
 - Argon2id password hashing and short-lived JWT access tokens
+- Login throttling and timing-safe handling of unknown accounts
+- Controlled alert lifecycle with role-restricted closure and duplicate cleanup
+- API security headers for content type, framing, referrer, permissions, and caching
 - Explainable payment-progress, cost, evidence and delay rules
 - Idempotent risk alert creation and access audit events
 - Responsive navigation and dark theme
@@ -78,4 +81,4 @@ npm run build
 npm run test:api
 ```
 
-Current result: frontend build succeeds and all 15 API/security, configuration, and Phase 3 intelligence tests pass.
+Current result: frontend build succeeds and all 18 API/security, configuration, lifecycle, and Phase 3 intelligence tests pass.

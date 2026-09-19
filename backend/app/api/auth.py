@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 import jwt
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,8 +11,9 @@ from ..config import settings
 from ..database import get_db
 from ..dependencies import get_current_user
 from ..models import RefreshSession, User
+from ..rate_limit import login_attempt_limiter
 from ..schemas import AccessToken, LoginRequest, UserOut
-from ..security import create_access_token, create_refresh_token, decode_token, hash_token, verify_password
+from ..security import DUMMY_PASSWORD_HASH, create_access_token, create_refresh_token, decode_token, hash_token, verify_password
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -39,13 +40,20 @@ def set_refresh_cookie(response: Response, refresh_token: str) -> None:
 
 
 @router.post("/login", response_model=AccessToken)
-def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)) -> AccessToken:
+def login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)) -> AccessToken:
     normalized_email = payload.email.strip().lower()
+    client_ip = request.client.host if request.client else "unknown"
+    retry_after = login_attempt_limiter.retry_after(client_ip, normalized_email)
+    if retry_after is not None:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many login attempts. Please try again later.", headers={"Retry-After": str(retry_after)})
     user = db.scalar(select(User).where(User.email == normalized_email))
-    if not user or not user.is_active or not user.organization.is_active or not verify_password(payload.password, user.password_hash):
+    password_valid = verify_password(payload.password, user.password_hash if user else DUMMY_PASSWORD_HASH)
+    if not user or not user.is_active or not user.organization.is_active or not password_valid:
+        login_attempt_limiter.record_failure(client_ip, normalized_email)
         record_event(db, action="auth.login", entity_type="session", outcome="denied", details={"email": normalized_email})
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    login_attempt_limiter.clear(client_ip, normalized_email)
     user.last_login_at = datetime.now(timezone.utc)
     access, refresh_token = issue_pair(db, user)
     set_refresh_cookie(response, refresh_token)

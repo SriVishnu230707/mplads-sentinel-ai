@@ -10,6 +10,9 @@ from .config import settings
 
 password_hash = PasswordHash.recommended()
 ALGORITHM = "HS256"
+# Always verify against a hash, even for a non-existent account, so the login
+# path does not reveal account existence through a faster response time.
+DUMMY_PASSWORD_HASH = password_hash.hash("sentinel-dummy-password-not-a-real-account")
 
 
 def hash_password(password: str) -> str:
