@@ -65,6 +65,17 @@ def test_unauthenticated_requests_are_rejected():
         assert response.status_code == 401
 
 
+def test_readiness_and_invalid_content_length_are_handled_safely():
+    with TestClient(app) as client:
+        assert client.get("/ready").status_code == 200
+        response = client.post(
+            "/api/v1/auth/login",
+            content=b"{}",
+            headers={"content-length": "invalid", "content-type": "application/json"},
+        )
+        assert response.status_code == 400
+
+
 def test_antigravity_local_preview_origin_is_authorized():
     with TestClient(app) as client:
         response = client.options(

@@ -15,5 +15,6 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: python -m pip install -r backend/requirements.txt
+      - run: PYTHONPATH=backend DATABASE_URL=sqlite:///./ci_migration.db alembic -c backend/alembic.ini upgrade head
       - run: PYTHONPATH=backend pytest -q backend/tests
       - run: npm audit --omit=dev --audit-level=high

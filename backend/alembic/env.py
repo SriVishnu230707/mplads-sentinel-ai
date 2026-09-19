@@ -1,4 +1,11 @@
 from logging.config import fileConfig
+from pathlib import Path
+import sys
+
+# Alembic is invoked from local shells, CI, and the Docker entrypoint. Put the
+# backend package root on sys.path explicitly instead of relying on CWD.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from alembic import context
 from app.config import settings
 from app.database import Base
