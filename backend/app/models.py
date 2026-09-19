@@ -142,6 +142,22 @@ class RiskSnapshot(Base):
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class InspectionEvidence(Base):
+    __tablename__ = "inspection_evidence"
+    __table_args__ = (Index("ix_inspection_evidence_project_captured", "project_id", "captured_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    submitted_by: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    reported_progress: Mapped[int] = mapped_column(Integer)
+    remarks: Mapped[str] = mapped_column(Text)
+    distance_from_project_km: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class RefreshSession(Base):
     __tablename__ = "refresh_sessions"
 

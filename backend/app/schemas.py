@@ -119,6 +119,41 @@ class ProjectIntelligenceOut(BaseModel):
     risk_timeline: list[RiskSnapshotOut]
 
 
+class EvidenceCreate(BaseModel):
+    captured_at: datetime
+    latitude: float = Field(ge=6, le=38)
+    longitude: float = Field(ge=68, le=98)
+    reported_progress: int = Field(ge=0, le=100)
+    remarks: str = Field(min_length=3, max_length=1000)
+
+
+class EvidenceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    project_id: str
+    captured_at: datetime
+    reported_progress: int
+    distance_from_project_km: float
+    created_at: datetime
+
+
+class DelayPredictionOut(BaseModel):
+    project_id: str
+    delay_probability: int
+    confidence: str
+    factors: list[str]
+    disclaimer: str
+
+
+class ImportValidationOut(BaseModel):
+    dry_run: bool
+    rows_received: int
+    valid_rows: int
+    invalid_rows: int
+    applied_rows: int
+    errors: list[dict[str, str]]
+
+
 class DashboardSummary(BaseModel):
     active_works: int
     sanctioned_lakh: float

@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_mplads_sentinel.db"
 os.environ["SECRET_KEY"] = "test-secret-that-is-long-enough-for-tests"
@@ -211,3 +212,44 @@ def test_api_security_headers_are_present_on_protected_responses():
         assert response.headers["x-frame-options"] == "DENY"
         assert response.headers["content-security-policy"] == "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
         assert response.headers["permissions-policy"] == "camera=(), geolocation=(), microphone=()"
+
+
+def test_phase4_prediction_evidence_and_import_controls_are_scoped():
+    with TestClient(app) as client:
+        token = login(client, "district@sentinel.gov.in")
+        headers = {"Authorization": f"Bearer {token}"}
+        project = client.get("/api/v1/projects/MPL-KA-24018", headers=headers).json()
+        prediction = client.get("/api/v1/projects/MPL-KA-24018/delay-prediction", headers=headers)
+        assert prediction.status_code == 200
+        assert prediction.json()["disclaimer"].startswith("Early-warning estimate")
+        assert client.get("/api/v1/projects/MPL-UP-23872/delay-prediction", headers=headers).status_code == 404
+
+        timestamp = datetime.now(timezone.utc).isoformat()
+        bad_evidence = client.post(
+            "/api/v1/projects/MPL-KA-24018/evidence",
+            headers=headers,
+            json={"captured_at": timestamp, "latitude": 14.0, "longitude": 77.712, "reported_progress": project["physical_progress"], "remarks": "Location should be rejected."},
+        )
+        assert bad_evidence.status_code == 422
+        evidence = client.post(
+            "/api/v1/projects/MPL-KA-24018/evidence",
+            headers=headers,
+            json={"captured_at": timestamp, "latitude": 13.2461, "longitude": 77.7121, "reported_progress": project["physical_progress"], "remarks": "Verified site visit with current work status."},
+        )
+        assert evidence.status_code == 201
+        assert evidence.json()["distance_from_project_km"] < 2
+
+        csv_text = f"project_id,spent_lakh,physical_progress,evidence_at\nMPL-KA-24018,{project['spent_lakh']},{project['physical_progress']},{timestamp}\n"
+        preview = client.post("/api/v1/imports/progress", headers=headers, files={"file": ("progress.csv", csv_text, "text/csv")})
+        assert preview.status_code == 200
+        assert preview.json()["dry_run"] is True
+        assert preview.json()["applied_rows"] == 0
+        applied = client.post("/api/v1/imports/progress?commit=true", headers=headers, files={"file": ("progress.csv", csv_text, "text/csv")})
+        assert applied.status_code == 200
+        assert applied.json()["applied_rows"] == 1
+
+        foreign_csv = f"project_id,spent_lakh,physical_progress,evidence_at\nMPL-UP-23872,54.2,49,{timestamp}\n"
+        rejected = client.post("/api/v1/imports/progress?commit=true", headers=headers, files={"file": ("progress.csv", foreign_csv, "text/csv")})
+        assert rejected.status_code == 200
+        assert rejected.json()["invalid_rows"] == 1
+        assert rejected.json()["applied_rows"] == 0
