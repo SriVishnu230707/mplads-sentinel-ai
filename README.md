@@ -1,6 +1,6 @@
 # MPLADS Sentinel AI
 
-Secure, role-aware risk-intelligence platform for MPLADS monitoring. Phase 2 adds a tested FastAPI backend, persistent data, authentication, jurisdiction enforcement, explainable rules, risk alerts and audit events.
+Secure, role-aware risk-intelligence platform for MPLADS monitoring. It combines explainable anomaly detection, scoped operational workflows, investigation cases, and deployment-aware security controls.
 
 ## Run locally
 
@@ -25,7 +25,7 @@ npm run dev:api
 
 The API runs at `http://localhost:8000`; interactive documentation is available at `/docs`. Keep this terminal running and start `npm run dev` in a second terminal. Using `localhost` for both services keeps the development refresh cookie first-party, including on Antigravity preview ports.
 
-For a quick college demonstration, SQLite is used automatically. To move to PostgreSQL, start `docker compose up -d postgres` and set `DATABASE_URL=postgresql+psycopg://sentinel:sentinel_local_only@localhost:5432/mplads_sentinel` in `backend/.env`.
+For a quick college demonstration, SQLite is used automatically. It is not a production configuration.
 
 ## Seeded demonstration accounts
 
@@ -38,9 +38,9 @@ All demonstration accounts use password `Sentinel@2026`:
 | District | `district@sentinel.gov.in` | Bengaluru Rural only |
 | Auditor | `auditor@sentinel.gov.in` | All projects |
 
-These accounts are for local demonstration only. Replace the seed and secret key before any deployment.
+These accounts and the password are synthetic, local demonstration data only. They must never be provisioned in a deployed environment.
 
-Production startup fails closed unless `AUTO_SEED=false` and `SECRET_KEY` is replaced with a random value of at least 32 characters. This prevents known demonstration credentials or the development signing secret from reaching a deployed environment.
+Production and staging startup fail closed unless `AUTO_SEED=false`, `SECRET_KEY` is replaced with a high-entropy secret, PostgreSQL and Redis are configured, and explicit HTTPS frontend origins are supplied. This prevents known demonstration credentials or the development signing secret from reaching a deployed environment.
 
 ## Production build
 
@@ -48,6 +48,12 @@ Production startup fails closed unless `AUTO_SEED=false` and `SECRET_KEY` is rep
 npm run build
 npm run preview
 ```
+
+## Secure deployment
+
+Copy `deployment.env.example` to a private deployment environment and replace every placeholder. URL-encode database and Redis passwords when placing them in connection URLs. The Compose configuration intentionally keeps PostgreSQL, Redis, and MinIO off host-published ports; expose only the API through a TLS reverse proxy. Use reviewed immutable image digests, managed secret storage, backups, and a firewall policy.
+
+The `/health` endpoint is a liveness probe and `/ready` verifies database and Redis availability. The authenticated Ministry/Auditor endpoint `/api/v1/audit/integrity` verifies the application audit hash chain. It is tamper-evident—not a substitute for periodically anchoring audit hashes in independent immutable storage.
 
 ## Included prototype modules
 
@@ -74,6 +80,9 @@ npm run preview
 - Phase 4 explainable delay early-warning, labelled as non-decisive assistance
 - Secure progress-import API: UTF-8 CSV only, 1 MB / 500-row limits, dry-run default, all-or-nothing validation, and jurisdiction enforcement
 - Metadata-only field evidence with time, monotonic-progress, India-boundary, and 2 km project-radius checks
+- Phase 5 investigation cases, maker-checker closure, scoped CSV report exports, and formula-injection protection
+- Phase 6 Alembic migrations, Redis-backed distributed limits, readiness checks, Docker deployment controls, and CI
+- Final hardening: chunked-request size enforcement, finite financial imports, optimistic concurrency, monotonic evidence timestamps, staging seed lockout, and audit hash-chain verification
 
 The seeded data is synthetic. The backend authorizes every protected request; frontend visibility is never treated as an access-control boundary.
 
@@ -84,4 +93,4 @@ npm run build
 npm run test:api
 ```
 
-Current result: frontend build succeeds and all 19 API/security, configuration, lifecycle, Phase 3, and Phase 4 tests pass.
+Current result: frontend build succeeds and all 25 API, security, configuration, lifecycle, integrity, and deployment-control tests pass.

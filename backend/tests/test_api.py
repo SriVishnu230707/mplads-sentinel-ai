@@ -76,6 +76,12 @@ def test_readiness_and_invalid_content_length_are_handled_safely():
         assert response.status_code == 400
 
 
+def test_request_body_limit_is_enforced_before_parsing():
+    with TestClient(app) as client:
+        response = client.post("/api/v1/auth/login", content=b"x" * 1_048_577, headers={"content-type": "application/json"})
+        assert response.status_code == 413
+
+
 def test_antigravity_local_preview_origin_is_authorized():
     with TestClient(app) as client:
         response = client.options(
@@ -267,6 +273,23 @@ def test_phase4_prediction_evidence_and_import_controls_are_scoped():
         assert rejected.status_code == 200
         assert rejected.json()["invalid_rows"] == 1
         assert rejected.json()["applied_rows"] == 0
+
+
+def test_final_phase_rejects_non_finite_imports_and_verifies_new_audit_events():
+    with TestClient(app) as client:
+        token = login(client, "district@sentinel.gov.in")
+        headers = {"Authorization": f"Bearer {token}"}
+        timestamp = datetime.now(timezone.utc).isoformat()
+        nan_csv = f"project_id,spent_lakh,physical_progress,evidence_at\nMPL-KA-24018,nan,30,{timestamp}\n"
+        rejected = client.post("/api/v1/imports/progress", headers=headers, files={"file": ("progress.csv", nan_csv, "text/csv")})
+        assert rejected.status_code == 200
+        assert rejected.json()["invalid_rows"] == 1
+
+        auditor_headers = {"Authorization": f"Bearer {login(client, 'auditor@sentinel.gov.in')}"}
+        integrity = client.get("/api/v1/audit/integrity", headers=auditor_headers)
+        assert integrity.status_code == 200
+        assert integrity.json()["valid"] is True
+        assert integrity.json()["verified_events"] >= 1
 
 
 def test_phase5_case_creation_is_idempotent_and_report_is_scoped():

@@ -47,7 +47,6 @@ def scan_projects(
         score, level, reasons = evaluate(project)
         if score != project.risk_score or reasons != project.risk_reasons:
             project.risk_score, project.risk_level, project.risk_reasons = score, level, reasons
-            project.version += 1
             db.add(snapshot(project))
             updated += 1
         existing = set(db.scalars(
@@ -60,7 +59,7 @@ def scan_projects(
             if reason["rule_code"] in existing:
                 continue
             severity = RiskLevel.HIGH if reason["score"] >= 20 else RiskLevel.MODERATE
-            db.add(Alert(project_id=project.id, rule_code=reason["rule_code"], title=reason["label"], explanation=reason["explanation"], severity=severity, score=reason["score"], confidence=reason["confidence"], recommended_action=reason["recommended_action"], evidence={"project_version": project.version}))
+            db.add(Alert(project_id=project.id, rule_code=reason["rule_code"], title=reason["label"], explanation=reason["explanation"], severity=severity, score=reason["score"], confidence=reason["confidence"], recommended_action=reason["recommended_action"], evidence={"project_version": project.version + 1}))
             created += 1
     record_event(db, action="risk.scan", entity_type="project_portfolio", actor_id=user.id, details={"projects": len(projects), "alerts_created": created})
     db.commit()

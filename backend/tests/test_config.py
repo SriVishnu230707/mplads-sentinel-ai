@@ -24,6 +24,16 @@ def test_production_rejects_demo_auto_seed():
         )
 
 
+def test_staging_rejects_demo_auto_seed():
+    with pytest.raises(ValidationError, match="AUTO_SEED must be disabled"):
+        Settings(
+            _env_file=None,
+            environment="staging",
+            auto_seed=True,
+            secret_key="staging-test-secret-with-at-least-32-characters",
+        )
+
+
 def test_production_accepts_hardened_configuration():
     settings = Settings(
         _env_file=None,

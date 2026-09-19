@@ -115,6 +115,7 @@ class Project(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     alerts: Mapped[list[Alert]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    __mapper_args__ = {"version_id_col": version}
 
 
 class Alert(Base):

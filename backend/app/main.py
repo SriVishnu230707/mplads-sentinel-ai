@@ -7,10 +7,11 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api import alerts, auth, cases, dashboard, imports, projects, reports
+from .api import alerts, audit, auth, cases, dashboard, imports, projects, reports
 from .config import settings
 from .database import Base, SessionLocal, engine
 from .rate_limit import redis_backend
+from .request_limits import RequestSizeLimitMiddleware
 from .seed import seed_demo_data
 
 
@@ -33,6 +34,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(RequestSizeLimitMiddleware, max_bytes=settings.max_request_bytes)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.frontend_origins,
@@ -45,16 +48,6 @@ app.add_middleware(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    content_length = request.headers.get("content-length")
-    if request.method in {"POST", "PUT", "PATCH"} and content_length:
-        try:
-            declared_size = int(content_length)
-        except ValueError:
-            return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
-        if declared_size < 0:
-            return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
-        if declared_size > settings.max_request_bytes:
-            return JSONResponse(status_code=413, content={"detail": "Request body is too large"})
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
@@ -96,6 +89,7 @@ def readiness() -> dict[str, str]:
 
 
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(audit.router, prefix="/api/v1")
 app.include_router(projects.router, prefix="/api/v1")
 app.include_router(alerts.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
