@@ -40,6 +40,8 @@ All demonstration accounts use password `Sentinel@2026`:
 
 These accounts are for local demonstration only. Replace the seed and secret key before any deployment.
 
+Production startup fails closed unless `AUTO_SEED=false` and `SECRET_KEY` is replaced with a random value of at least 32 characters. This prevents known demonstration credentials or the development signing secret from reaching a deployed environment.
+
 ## Production build
 
 ```bash
@@ -73,4 +75,4 @@ npm run build
 npm run test:api
 ```
 
-Current result: frontend build succeeds and all nine API/security tests pass.
+Current result: frontend build succeeds and all 13 API/security and configuration tests pass.
