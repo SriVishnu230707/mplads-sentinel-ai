@@ -2,16 +2,17 @@
 
 Secure, role-aware risk-intelligence platform for MPLADS monitoring. Phase 2 adds a tested FastAPI backend, persistent data, authentication, jurisdiction enforcement, explainable rules, risk alerts and audit events.
 
-## Run locally
+## Run the demonstration locally
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Open the URL printed by Vite.
+Open the URL printed by Vite. This single command starts both the frontend and
+the FastAPI demo API; stop it with `Ctrl+C` when finished.
 
-## Run the Phase 2 API
+## Run the Phase 2 API separately
 
 From the project root:
 

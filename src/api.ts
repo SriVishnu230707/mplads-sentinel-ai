@@ -1,6 +1,8 @@
 // Keep the frontend and API on the same site in development so the HttpOnly
 // refresh cookie survives reloads under modern third-party-cookie policies.
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1'
+// Vite proxies this relative URL to FastAPI during local development. This
+// avoids origin/cookie mismatches and keeps a deployed API configurable.
+const API_BASE = import.meta.env.VITE_API_URL ?? '/api/v1'
 
 export type ApiUser = {
   id: string

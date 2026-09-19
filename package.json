@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/demo.mjs",
+    "dev:ui": "vite",
     "dev:api": "cd backend && .venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --port 8000",
     "test:api": "cd backend && .venv\\Scripts\\python.exe -m pytest -q",
     "build": "tsc -b && vite build",
