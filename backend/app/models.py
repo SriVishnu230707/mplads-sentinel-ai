@@ -47,6 +47,13 @@ class AlertStatus(str, enum.Enum):
     DISMISSED = "dismissed"
 
 
+class CaseStatus(str, enum.Enum):
+    OPEN = "open"
+    INVESTIGATING = "investigating"
+    CLOSURE_REVIEW = "closure_review"
+    CLOSED = "closed"
+
+
 class Organization(Base):
     __tablename__ = "organizations"
 
@@ -156,6 +163,24 @@ class InspectionEvidence(Base):
     remarks: Mapped[str] = mapped_column(Text)
     distance_from_project_km: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class InvestigationCase(Base):
+    __tablename__ = "investigation_cases"
+    __table_args__ = (UniqueConstraint("alert_id", name="uq_case_alert"), Index("ix_cases_project_status", "project_id", "status"))
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    alert_id: Mapped[str] = mapped_column(ForeignKey("alerts.id"), unique=True, index=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    title: Mapped[str] = mapped_column(String(180))
+    status: Mapped[CaseStatus] = mapped_column(Enum(CaseStatus), default=CaseStatus.OPEN, index=True)
+    priority: Mapped[RiskLevel] = mapped_column(Enum(RiskLevel))
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    closure_note: Mapped[str | None] = mapped_column(Text)
+    closed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class RefreshSession(Base):

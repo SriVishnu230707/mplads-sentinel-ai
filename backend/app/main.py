@@ -1,19 +1,25 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+import logging
+import uuid
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api import alerts, auth, dashboard, imports, projects
+from .api import alerts, auth, cases, dashboard, imports, projects, reports
 from .config import settings
 from .database import Base, SessionLocal, engine
+from .rate_limit import redis_backend
 from .seed import seed_demo_data
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Prototype convenience. Production uses Alembic migrations instead.
-    Base.metadata.create_all(bind=engine)
+    # Local demo databases are disposable. Deployed environments must use the
+    # reviewed Alembic migration history, never implicit schema creation.
+    if settings.environment == "development":
+        Base.metadata.create_all(bind=engine)
     if settings.auto_seed:
         with SessionLocal() as db:
             seed_demo_data(db)
@@ -39,7 +45,19 @@ app.add_middleware(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if request.method in {"POST", "PUT", "PATCH"} and content_length:
+        try:
+            declared_size = int(content_length)
+        except ValueError:
+            return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
+        if declared_size < 0:
+            return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
+        if declared_size > settings.max_request_bytes:
+            return JSONResponse(status_code=413, content={"detail": "Request body is too large"})
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -62,8 +80,25 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": settings.app_name, "version": "0.2.0"}
 
 
+@app.get("/ready", tags=["system"])
+def readiness() -> dict[str, str]:
+    """Probe required dependencies without exposing configuration details."""
+    try:
+        with engine.connect() as connection:
+            connection.exec_driver_sql("SELECT 1")
+    except Exception as exc:
+        logging.getLogger(__name__).warning("readiness probe failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Service dependencies are unavailable") from exc
+    if not redis_backend.ping():
+        logging.getLogger(__name__).warning("readiness probe failed: redis unavailable")
+        raise HTTPException(status_code=503, detail="Service dependencies are unavailable")
+    return {"status": "ready"}
+
+
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(projects.router, prefix="/api/v1")
 app.include_router(alerts.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(imports.router, prefix="/api/v1")
+app.include_router(cases.router, prefix="/api/v1")
+app.include_router(reports.router, prefix="/api/v1")
