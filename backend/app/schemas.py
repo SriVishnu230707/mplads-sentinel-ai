@@ -156,7 +156,6 @@ class ImportValidationOut(BaseModel):
 
 class CaseCreate(BaseModel):
     alert_id: str = Field(min_length=1, max_length=36)
-    owner_id: str | None = Field(default=None, max_length=36)
 
 
 class CaseUpdate(BaseModel):

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from ..audit import record_event
 from ..database import get_db
 from ..dependencies import apply_project_scope, require_roles
-from ..models import Alert, CaseStatus, InvestigationCase, Project, Role, User
+from ..models import Alert, AlertStatus, CaseStatus, InvestigationCase, Project, Role, User
 from ..schemas import CaseCreate, CaseOut, CaseUpdate
 
 router = APIRouter(prefix="/cases", tags=["investigations"])
@@ -25,7 +25,11 @@ def create_case(payload: CaseCreate, db: Session = Depends(get_db), user: User =
     alert = db.scalar(select(Alert).where(Alert.id == payload.alert_id, Alert.project_id.in_(project_ids)))
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
-    case = InvestigationCase(alert_id=alert.id, project_id=alert.project_id, title=alert.title, priority=alert.severity, owner_id=payload.owner_id or user.id, created_by=user.id)
+    if alert.status not in {AlertStatus.OPEN, AlertStatus.TRIAGED}:
+        raise HTTPException(status_code=409, detail="Only active alerts can create an investigation case")
+    # Assignment is deliberately fixed to the creator in this MVP. An owner
+    # picker requires a separate, scope-checked delegation workflow.
+    case = InvestigationCase(alert_id=alert.id, project_id=alert.project_id, title=alert.title, priority=alert.severity, owner_id=user.id, created_by=user.id)
     try:
         db.add(case); db.flush()
     except IntegrityError as exc:
@@ -48,6 +52,8 @@ def update_case(case_id: str, payload: CaseUpdate, db: Session = Depends(get_db)
     if payload.status == CaseStatus.CLOSED:
         if user.role not in {Role.MINISTRY, Role.AUDITOR} or user.id == case.created_by:
             raise HTTPException(status_code=403, detail="An independent Ministry or Auditor reviewer must close this case")
+        if not payload.closure_note or not payload.closure_note.strip():
+            raise HTTPException(status_code=422, detail="A closure note is required before closing a case")
         case.closed_by, case.closure_note = user.id, payload.closure_note
     case.status = payload.status
     record_event(db, action="case.update", entity_type="investigation_case", entity_id=case.id, actor_id=user.id, details={"status": payload.status.value})

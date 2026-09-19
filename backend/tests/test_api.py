@@ -272,3 +272,19 @@ def test_phase5_case_creation_is_idempotent_and_report_is_scoped():
         assert report.status_code == 200
         assert "attachment" in report.headers["content-disposition"]
         assert "Project ID" in report.text
+
+
+def test_case_closure_requires_independent_reviewer_and_note():
+    with TestClient(app) as client:
+        ministry_headers = {"Authorization": f"Bearer {login(client, 'ministry@sentinel.gov.in')}"}
+        client.post("/api/v1/risk/scan", headers=ministry_headers)
+        alert = client.get("/api/v1/alerts?status=open", headers=ministry_headers).json()[0]
+        result = client.post("/api/v1/cases", headers=ministry_headers, json={"alert_id": alert["id"]})
+        if result.status_code == 409:
+            case = next(item for item in client.get("/api/v1/cases", headers=ministry_headers).json() if item["alert_id"] == alert["id"])
+        else:
+            case = result.json()
+        client.patch(f"/api/v1/cases/{case['id']}", headers=ministry_headers, json={"status": "investigating"})
+        client.patch(f"/api/v1/cases/{case['id']}", headers=ministry_headers, json={"status": "closure_review"})
+        forbidden = client.patch(f"/api/v1/cases/{case['id']}", headers=ministry_headers, json={"status": "closed", "closure_note": "same person"})
+        assert forbidden.status_code == 403
