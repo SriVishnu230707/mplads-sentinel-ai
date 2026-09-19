@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, Bell,
+  Activity, AlertTriangle, BarChart3, Bell,
   Building2, CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp,
   ClipboardCheck, Clock3, Download, FileSearch, Filter, FolderKanban, Gauge,
   IndianRupee, LayoutDashboard, LockKeyhole, Map, Menu, Moon,
@@ -8,18 +8,18 @@ import {
   Users, X, Zap, LogOut, Eye, EyeOff, UserRound, Mail, MapPin, Fingerprint,
   KeyRound, BadgeCheck, Globe2, BriefcaseBusiness,
 } from 'lucide-react'
-import { activity, projects as demoProjects, states, trend, type Project, type RiskLevel } from './data'
-import { api, type ApiProject, type ApiUser } from './api'
+import { activity, states, trend, type Project, type RiskLevel } from './data'
+import { api, type ApiDashboardSummary, type ApiProject, type ApiUser } from './api'
 
 type Page = 'overview' | 'alerts' | 'projects' | 'map' | 'cases' | 'reports' | 'admin' | 'profile'
 type Role = 'Ministry National Supervisor' | 'State Nodal Authority' | 'District Authority' | 'Auditor / Investigator'
 
 const nav: { id: Page; label: string; icon: typeof LayoutDashboard; count?: number }[] = [
   { id: 'overview', label: 'Command centre', icon: LayoutDashboard },
-  { id: 'alerts', label: 'Risk alerts', icon: AlertTriangle, count: 31 },
+  { id: 'alerts', label: 'Risk alerts', icon: AlertTriangle },
   { id: 'projects', label: 'Works & projects', icon: FolderKanban },
   { id: 'map', label: 'Map intelligence', icon: Map },
-  { id: 'cases', label: 'Investigations', icon: ClipboardCheck, count: 8 },
+  { id: 'cases', label: 'Investigations', icon: ClipboardCheck },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
   { id: 'admin', label: 'Administration', icon: Settings },
 ]
@@ -57,7 +57,8 @@ const toProject = (p: ApiProject): Project => ({
 function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void }) {
   const [page, setPage] = useState<Page>('overview')
   const role = roleLabels[user.role]
-  const [projectData, setProjectData] = useState<Project[]>(demoProjects)
+  const [projectData, setProjectData] = useState<Project[]>([])
+  const [summary, setSummary] = useState<ApiDashboardSummary | null>(null)
   const [scanMessage, setScanMessage] = useState('')
   const [scanning, setScanning] = useState(false)
   const [dark, setDark] = useState(() => {
@@ -89,12 +90,19 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
     return () => document.removeEventListener('keydown', handler)
   }, [])
 
-  const loadProjects = async () => {
-    const result = await api.projects()
-    setProjectData(result.map(toProject))
+  const loadPortfolio = async () => {
+    const [projects, dashboardSummary] = await Promise.all([api.projects(), api.dashboardSummary()])
+    setProjectData(projects.map(toProject))
+    setSummary(dashboardSummary)
   }
 
-  useEffect(() => { loadProjects().catch(() => setScanMessage('API unavailable — showing demonstration data')) }, [])
+  useEffect(() => {
+    loadPortfolio().catch(() => {
+      setProjectData([])
+      setSummary(null)
+      setScanMessage('Project data is unavailable. No unverified fallback data is being shown.')
+    })
+  }, [])
 
   const runScan = async () => {
     if (scanning) return
@@ -102,7 +110,7 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
     setScanMessage('Scanning authorized portfolio…')
     try {
       const result = await api.scan()
-      await loadProjects()
+      await loadPortfolio()
       setScanMessage(`${result.projects_scanned} works scanned · ${result.alerts_created} new alerts`)
     } catch (error) {
       setScanMessage(error instanceof Error ? error.message : 'Risk scan failed')
@@ -129,10 +137,11 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
         <nav aria-label="Primary navigation">
           {nav.map(item => {
             const Icon = item.icon
+            const count = item.id === 'alerts' ? summary?.open_alerts : undefined
             return (
               <button key={item.id} className={page === item.id ? 'nav-item active' : 'nav-item'} onClick={() => { setPage(item.id); setMobileMenu(false) }} title={collapsed ? item.label : undefined}>
                 <Icon size={19} />
-                {!collapsed && <><span>{item.label}</span>{item.count && <b>{item.count}</b>}</>}
+                {!collapsed && <><span>{item.label}</span>{count !== undefined && <b>{count}</b>}</>}
               </button>
             )
           })}
@@ -192,7 +201,7 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
 
           {scanMessage && <div className="system-message"><ShieldCheck size={16}/>{scanMessage}<button onClick={() => setScanMessage('')}><X size={15}/></button></div>}
 
-          {page === 'overview' && <Overview projects={filtered} onSelect={setSelected} />}
+          {page === 'overview' && <Overview projects={filtered} summary={summary} onSelect={setSelected} />}
           {page === 'alerts' && <AlertsView projects={filtered} onSelect={setSelected} />}
           {page === 'projects' && <ProjectsView projects={filtered} onSelect={setSelected} />}
           {page === 'map' && <MapView projects={filtered} onSelect={setSelected} />}
@@ -210,13 +219,16 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
 
 // pageDescriptions moved above DashboardApp for correct declaration order
 
-function Overview({ projects, onSelect }: { projects: Project[]; onSelect: (p: Project) => void }) {
+function Overview({ projects, summary, onSelect }: { projects: Project[]; summary: ApiDashboardSummary | null; onSelect: (p: Project) => void }) {
+  const utilization = summary && summary.sanctioned_lakh > 0
+    ? `${Math.round(summary.expenditure_lakh / summary.sanctioned_lakh * 100)}%`
+    : '—'
   return <>
     <section className="metrics-grid">
-      <Metric icon={FolderKanban} label="Active works" value="18,420" delta="4.8%" positive note="across 736 districts" color="teal" />
-      <Metric icon={IndianRupee} label="Expenditure monitored" value="₹6,847 Cr" delta="8.2%" positive note="of ₹8,102 Cr sanctioned" color="blue" />
-      <Metric icon={AlertTriangle} label="High-risk works" value="482" delta="12.4%" note="31 require action today" color="red" />
-      <Metric icon={ClipboardCheck} label="Cases resolved" value="1,248" delta="18.7%" positive note="87% within target SLA" color="amber" />
+      <Metric icon={FolderKanban} label="Active works" value={summary ? summary.active_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.delayed_works) : '—'} note="delayed works in your scope" color="teal" />
+      <Metric icon={IndianRupee} label="Expenditure monitored" value={summary ? formatCrore(summary.expenditure_lakh / 100) : '—'} delta={utilization} note={summary ? `of ${formatCrore(summary.sanctioned_lakh / 100)} sanctioned` : 'loading authorized portfolio'} color="blue" />
+      <Metric icon={AlertTriangle} label="High-risk works" value={summary ? summary.high_risk_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.open_alerts) : '—'} note="open alerts requiring review" color="red" />
+      <Metric icon={Clock3} label="Delayed works" value={summary ? summary.delayed_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.active_works) : '—'} note="active works assessed" color="amber" />
     </section>
 
     <section className="dashboard-grid">
@@ -254,8 +266,8 @@ function Overview({ projects, onSelect }: { projects: Project[]; onSelect: (p: P
   </>
 }
 
-function Metric({ icon: Icon, label, value, delta, positive, note, color }: { icon: typeof Gauge; label: string; value: string; delta: string; positive?: boolean; note: string; color: string }) {
-  return <article className="metric card"><div className={`metric-icon ${color}`}><Icon size={20} /></div><div className="metric-top"><span>{label}</span><CircleHelp size={14} /></div><div className="metric-value">{value}</div><div className="metric-foot"><span className={positive ? 'delta positive' : 'delta negative'}>{positive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}{delta}</span><span>{note}</span></div></article>
+function Metric({ icon: Icon, label, value, delta, note, color }: { icon: typeof Gauge; label: string; value: string; delta: string; note: string; color: string }) {
+  return <article className="metric card"><div className={`metric-icon ${color}`}><Icon size={20} /></div><div className="metric-top"><span>{label}</span><CircleHelp size={14} /></div><div className="metric-value">{value}</div><div className="metric-foot"><span className="delta neutral">{delta}</span><span>{note}</span></div></article>
 }
 
 function CardHeader({ title, subtitle, action }: { title: string; subtitle: string; action?: string }) {

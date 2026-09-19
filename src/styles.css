@@ -100,7 +100,7 @@ kbd { background:var(--surface); border:1px solid var(--line); border-radius:5px
 .metric-top { display:flex; gap:5px; align-items:center; color:var(--muted); font-size:12px; font-weight:600; }
 .metric-value { font:800 25px/1.2 'Manrope', sans-serif; margin:7px 0 10px; letter-spacing:-.03em; }
 .metric-foot { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:10.5px; }
-.delta { display:inline-flex; align-items:center; font-weight:800; }.delta.positive { color:#238061; }.delta.negative { color:var(--red); }
+.delta { display:inline-flex; align-items:center; font-weight:800; }.delta.positive { color:#238061; }.delta.negative { color:var(--red); }.delta.neutral { color:var(--green-700); }
 
 .dashboard-grid { display:grid; grid-template-columns:1.45fr 1fr; gap:14px; margin-bottom:14px; }
 .dashboard-grid.lower-grid { grid-template-columns:1.55fr .75fr; }

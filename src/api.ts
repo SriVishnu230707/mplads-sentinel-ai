@@ -31,10 +31,22 @@ export type ApiProject = {
   longitude: number | null
 }
 
+export type ApiDashboardSummary = {
+  active_works: number
+  sanctioned_lakh: number
+  expenditure_lakh: number
+  high_risk_works: number
+  open_alerts: number
+  delayed_works: number
+  risk_distribution: Record<ApiProject['risk_level'], number>
+}
+
 let accessToken: string | null = null
+let refreshPromise: Promise<boolean> | null = null
 
 async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
   const headers = new Headers(init.headers)
+  const tokenUsed = accessToken
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
   if (init.body) headers.set('Content-Type', 'application/json')
   const controller = new AbortController()
@@ -56,7 +68,8 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
     window.clearTimeout(timeout)
   }
   if (response.status === 401 && retry && path !== '/auth/login' && path !== '/auth/refresh') {
-    const restored = await api.restoreSession()
+    if (tokenUsed && accessToken && tokenUsed !== accessToken) return request<T>(path, init, false)
+    const restored = await restoreSession()
     if (restored) return request<T>(path, init, false)
   }
   if (!response.ok) {
@@ -65,6 +78,23 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
+}
+
+function restoreSession(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise
+  refreshPromise = (async () => {
+    try {
+      const token = await request<{ access_token: string }>('/auth/refresh', { method: 'POST' }, false)
+      accessToken = token.access_token
+      return true
+    } catch {
+      accessToken = null
+      return false
+    } finally {
+      refreshPromise = null
+    }
+  })()
+  return refreshPromise
 }
 
 export const api = {
@@ -77,18 +107,12 @@ export const api = {
   },
 
   async restoreSession(): Promise<boolean> {
-    try {
-      const token = await request<{ access_token: string }>('/auth/refresh', { method: 'POST' }, false)
-      accessToken = token.access_token
-      return true
-    } catch {
-      accessToken = null
-      return false
-    }
+    return restoreSession()
   },
 
   me: () => request<ApiUser>('/auth/me'),
   projects: () => request<ApiProject[]>('/projects'),
+  dashboardSummary: () => request<ApiDashboardSummary>('/dashboard/summary'),
   scan: () => request<{ projects_scanned: number; alerts_created: number; scores_updated: number }>('/risk/scan', { method: 'POST' }),
 
   async logout(): Promise<void> {
