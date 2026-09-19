@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
 
 from ..audit import record_event
 from ..database import get_db
@@ -91,6 +92,10 @@ def submit_evidence(
         raise HTTPException(status_code=422, detail="Evidence capture time cannot be in the future")
     if captured_at.date() < project.sanction_date:
         raise HTTPException(status_code=422, detail="Evidence cannot predate the project sanction")
+    if project.last_evidence_at:
+        latest = project.last_evidence_at.replace(tzinfo=timezone.utc) if project.last_evidence_at.tzinfo is None else project.last_evidence_at
+        if captured_at < latest:
+            raise HTTPException(status_code=409, detail="Evidence capture time cannot be older than accepted evidence")
     if payload.reported_progress < project.physical_progress:
         raise HTTPException(status_code=409, detail="Reported progress cannot decrease through this evidence workflow")
     if project.latitude is None or project.longitude is None:
@@ -120,6 +125,10 @@ def submit_evidence(
         actor_id=user.id,
         details={"project_id": project.id, "distance_km": round(distance_km, 3)},
     )
-    db.commit()
+    try:
+        db.commit()
+    except StaleDataError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Project changed during evidence submission; review and retry") from exc
     db.refresh(evidence)
     return evidence

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
 
 from ..audit import record_event
 from ..database import get_db
@@ -68,12 +70,18 @@ async def import_progress(
             spent_lakh = float(row.get("spent_lakh") or "")
             progress = int(row.get("physical_progress") or "")
             evidence_at = parse_iso_datetime(row.get("evidence_at") or "")
+            if not math.isfinite(spent_lakh):
+                raise ValueError("Expenditure must be a finite number")
             if spent_lakh < project.spent_lakh or spent_lakh > project.sanctioned_lakh:
                 raise ValueError("Expenditure must not decrease or exceed the sanctioned value")
             if progress < project.physical_progress or not 0 <= progress <= 100:
                 raise ValueError("Physical progress must not decrease and must be between 0 and 100")
             if evidence_at > datetime.now(timezone.utc) or evidence_at.date() < project.sanction_date:
                 raise ValueError("Evidence date is outside the permitted project period")
+            if project.last_evidence_at:
+                latest = project.last_evidence_at.replace(tzinfo=timezone.utc) if project.last_evidence_at.tzinfo is None else project.last_evidence_at
+                if evidence_at < latest:
+                    raise ValueError("Evidence date cannot be older than the latest accepted evidence")
             validated.append((project, spent_lakh, progress, evidence_at))
         except (TypeError, ValueError):
             errors.append({"row": str(row_number), "message": "Row has invalid or unauthorized progress data"})
@@ -85,5 +93,9 @@ async def import_progress(
             project.physical_progress = progress
             project.last_evidence_at = evidence_at
         record_event(db, action="import.progress", entity_type="project_progress", actor_id=user.id, details={"rows": len(validated), "filename": filename})
-        db.commit()
+        try:
+            db.commit()
+        except StaleDataError as exc:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="One or more projects changed during import; review and retry") from exc
     return ImportValidationOut(dry_run=not commit, rows_received=len(rows), valid_rows=len(validated), invalid_rows=0, applied_rows=len(validated) if commit else 0, errors=[])
