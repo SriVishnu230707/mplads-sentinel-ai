@@ -130,6 +130,18 @@ class Alert(Base):
     project: Mapped[Project] = relationship(back_populates="alerts")
 
 
+class RiskSnapshot(Base):
+    __tablename__ = "risk_snapshots"
+    __table_args__ = (Index("ix_risk_snapshots_project_recorded", "project_id", "recorded_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    score: Mapped[int] = mapped_column(Integer)
+    level: Mapped[RiskLevel] = mapped_column(Enum(RiskLevel))
+    reasons: Mapped[list] = mapped_column(JSON, default=list)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class RefreshSession(Base):
     __tablename__ = "refresh_sessions"
 
@@ -153,4 +165,3 @@ class AuditEvent(Base):
     outcome: Mapped[str] = mapped_column(String(30), default="success")
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
-

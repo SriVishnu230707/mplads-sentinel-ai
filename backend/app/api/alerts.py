@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import record_event
 from ..database import get_db
 from ..dependencies import apply_project_scope, get_current_user, require_roles
+from ..intelligence import snapshot
 from ..models import Alert, AlertStatus, Project, RiskLevel, Role, User
 from ..risk_engine import evaluate
-from ..schemas import AlertOut, ScanResult
+from ..schemas import AlertOut, AlertReviewRequest, ScanResult
 
 
 router = APIRouter(tags=["risk intelligence"])
@@ -40,6 +41,7 @@ def scan_projects(
         if score != project.risk_score or reasons != project.risk_reasons:
             project.risk_score, project.risk_level, project.risk_reasons = score, level, reasons
             project.version += 1
+            db.add(snapshot(project))
             updated += 1
         existing = set(db.scalars(select(Alert.rule_code).where(Alert.project_id == project.id, Alert.status == AlertStatus.OPEN)).all())
         for reason in reasons:
@@ -52,3 +54,20 @@ def scan_projects(
     db.commit()
     return ScanResult(projects_scanned=len(projects), alerts_created=created, scores_updated=updated)
 
+
+@router.patch("/alerts/{alert_id}", response_model=AlertOut)
+def update_alert_status(
+    alert_id: str,
+    payload: AlertReviewRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(Role.MINISTRY, Role.STATE, Role.DISTRICT, Role.AUDITOR)),
+) -> Alert:
+    scoped_project_ids = apply_project_scope(select(Project.id), user)
+    alert = db.scalar(select(Alert).where(Alert.id == alert_id, Alert.project_id.in_(scoped_project_ids)))
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    alert.status = payload.status
+    record_event(db, action="alert.review", entity_type="alert", entity_id=alert.id, actor_id=user.id, details={"status": payload.status.value})
+    db.commit()
+    db.refresh(alert)
+    return alert

@@ -30,7 +30,7 @@ def test_login_identity_and_scoped_project_access():
 
         projects = client.get("/api/v1/projects", headers=headers)
         assert projects.status_code == 200
-        assert [item["id"] for item in projects.json()] == ["MPL-KA-24018"]
+        assert {item["id"] for item in projects.json()} == {"MPL-KA-24018", "MPL-KA-24019"}
 
         hidden = client.get("/api/v1/projects/MPL-UP-23872", headers=headers)
         assert hidden.status_code == 404
@@ -42,7 +42,7 @@ def test_ministry_can_scan_and_list_alerts():
         headers = {"Authorization": f"Bearer {token}"}
         scan = client.post("/api/v1/risk/scan", headers=headers)
         assert scan.status_code == 200
-        assert scan.json()["projects_scanned"] == 5
+        assert scan.json()["projects_scanned"] == 6
         alerts = client.get("/api/v1/alerts", headers=headers)
         assert alerts.status_code == 200
         assert len(alerts.json()) > 0
@@ -133,3 +133,31 @@ def test_disabled_organization_blocks_login_access_and_refresh():
                 assert user is not None
                 user.organization.is_active = True
                 db.commit()
+
+
+def test_project_intelligence_is_scoped_and_explainable():
+    with TestClient(app) as client:
+        token = login(client, "district@sentinel.gov.in")
+        headers = {"Authorization": f"Bearer {token}"}
+        intelligence = client.get("/api/v1/projects/MPL-KA-24018/intelligence", headers=headers)
+        assert intelligence.status_code == 200
+        payload = intelligence.json()
+        assert payload["health_score"] < 100
+        assert any(item["status"] in {"attention", "overdue"} for item in payload["compliance"])
+        assert payload["duplicate_candidates"][0]["project_id"] == "MPL-KA-24019"
+        assert len(payload["risk_timeline"]) >= 1
+
+        hidden = client.get("/api/v1/projects/MPL-UP-23872/intelligence", headers=headers)
+        assert hidden.status_code == 404
+
+
+def test_authorized_user_can_start_alert_review():
+    with TestClient(app) as client:
+        token = login(client, "ministry@sentinel.gov.in")
+        headers = {"Authorization": f"Bearer {token}"}
+        client.post("/api/v1/risk/scan", headers=headers)
+        alerts = client.get("/api/v1/alerts", headers=headers).json()
+        assert alerts
+        review = client.patch(f"/api/v1/alerts/{alerts[0]['id']}", headers=headers, json={"status": "triaged"})
+        assert review.status_code == 200
+        assert review.json()["status"] == "triaged"

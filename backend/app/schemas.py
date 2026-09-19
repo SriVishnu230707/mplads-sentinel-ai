@@ -85,6 +85,40 @@ class AlertOut(BaseModel):
     created_at: datetime
 
 
+class AlertReviewRequest(BaseModel):
+    status: AlertStatus
+
+
+class ComplianceItemOut(BaseModel):
+    label: str
+    status: str
+    detail: str
+
+
+class DuplicateCandidateOut(BaseModel):
+    project_id: str
+    title: str
+    location: str
+    similarity_score: int
+    reasons: list[str]
+
+
+class RiskSnapshotOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    score: int
+    level: RiskLevel
+    recorded_at: datetime
+
+
+class ProjectIntelligenceOut(BaseModel):
+    project_id: str
+    health_score: int
+    health_band: str
+    compliance: list[ComplianceItemOut]
+    duplicate_candidates: list[DuplicateCandidateOut]
+    risk_timeline: list[RiskSnapshotOut]
+
+
 class DashboardSummary(BaseModel):
     active_works: int
     sanctioned_lakh: float
