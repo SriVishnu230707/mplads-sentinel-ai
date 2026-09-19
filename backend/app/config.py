@@ -1,14 +1,17 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+DEVELOPMENT_SECRET = "development-only-secret-change-before-deployment"
 
 
 class Settings(BaseSettings):
     app_name: str = "MPLADS Sentinel API"
     environment: str = "development"
     database_url: str = "sqlite:///./mplads_sentinel.db"
-    secret_key: str = "development-only-secret-change-before-deployment"
+    secret_key: str = Field(default=DEVELOPMENT_SECRET, min_length=32)
     access_token_minutes: int = 15
     refresh_token_days: int = 7
     frontend_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -23,6 +26,15 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
+
+    @model_validator(mode="after")
+    def reject_unsafe_production_settings(self) -> "Settings":
+        if self.environment.strip().lower() == "production":
+            if self.secret_key == DEVELOPMENT_SECRET:
+                raise ValueError("SECRET_KEY must be replaced before production startup")
+            if self.auto_seed:
+                raise ValueError("AUTO_SEED must be disabled before production startup")
+        return self
 
 
 @lru_cache
