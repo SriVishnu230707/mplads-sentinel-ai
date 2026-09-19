@@ -58,6 +58,23 @@ export type ApiProjectIntelligence = {
   risk_timeline: Array<{ score: number; level: ApiProject['risk_level']; recorded_at: string }>
 }
 
+export type ApiDelayPrediction = {
+  project_id: string
+  delay_probability: number
+  confidence: string
+  factors: string[]
+  disclaimer: string
+}
+
+export type ApiEvidence = {
+  id: string
+  project_id: string
+  captured_at: string
+  reported_progress: number
+  distance_from_project_km: number
+  created_at: string
+}
+
 let accessToken: string | null = null
 let refreshPromise: Promise<boolean> | null = null
 
@@ -130,6 +147,8 @@ export const api = {
   me: () => request<ApiUser>('/auth/me'),
   projects: () => request<ApiProject[]>('/projects'),
   intelligence: (projectId: string) => request<ApiProjectIntelligence>(`/projects/${encodeURIComponent(projectId)}/intelligence`),
+  delayPrediction: (projectId: string) => request<ApiDelayPrediction>(`/projects/${encodeURIComponent(projectId)}/delay-prediction`),
+  submitEvidence: (projectId: string, payload: { captured_at: string; latitude: number; longitude: number; reported_progress: number; remarks: string }) => request<ApiEvidence>(`/projects/${encodeURIComponent(projectId)}/evidence`, { method: 'POST', body: JSON.stringify(payload) }),
   alerts: () => request<ApiAlert[]>('/alerts'),
   updateAlert: (alertId: string, status: ApiAlert['status']) => request<ApiAlert>(`/alerts/${encodeURIComponent(alertId)}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   dashboardSummary: () => request<ApiDashboardSummary>('/dashboard/summary'),

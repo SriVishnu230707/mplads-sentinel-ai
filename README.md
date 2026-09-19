@@ -71,6 +71,9 @@ npm run preview
 - Phase 3 project-health score, compliance watch, and historical risk timeline
 - Scoped duplicate-work matching with explainable similarity factors
 - Human alert-triage action recorded in the audit trail
+- Phase 4 explainable delay early-warning, labelled as non-decisive assistance
+- Secure progress-import API: UTF-8 CSV only, 1 MB / 500-row limits, dry-run default, all-or-nothing validation, and jurisdiction enforcement
+- Metadata-only field evidence with time, monotonic-progress, India-boundary, and 2 km project-radius checks
 
 The seeded data is synthetic. The backend authorizes every protected request; frontend visibility is never treated as an access-control boundary.
 
@@ -81,4 +84,4 @@ npm run build
 npm run test:api
 ```
 
-Current result: frontend build succeeds and all 18 API/security, configuration, lifecycle, and Phase 3 intelligence tests pass.
+Current result: frontend build succeeds and all 19 API/security, configuration, lifecycle, Phase 3, and Phase 4 tests pass.
