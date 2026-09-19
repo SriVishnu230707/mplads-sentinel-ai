@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
 
 from ..audit import record_event
 from ..database import get_db
@@ -62,7 +63,11 @@ def scan_projects(
             db.add(Alert(project_id=project.id, rule_code=reason["rule_code"], title=reason["label"], explanation=reason["explanation"], severity=severity, score=reason["score"], confidence=reason["confidence"], recommended_action=reason["recommended_action"], evidence={"project_version": project.version + 1}))
             created += 1
     record_event(db, action="risk.scan", entity_type="project_portfolio", actor_id=user.id, details={"projects": len(projects), "alerts_created": created})
-    db.commit()
+    try:
+        db.commit()
+    except StaleDataError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Project data changed during risk scan; retry the scan") from exc
     return ScanResult(projects_scanned=len(projects), alerts_created=created, scores_updated=updated)
 
 

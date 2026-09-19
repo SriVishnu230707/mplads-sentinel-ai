@@ -17,7 +17,7 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 def safe_csv_value(value: object) -> object:
     """Prevent spreadsheet apps from interpreting exported data as formulas."""
     text = str(value)
-    return f"'{text}" if text.startswith(("=", "+", "-", "@")) else value
+    return f"'{text}" if text.lstrip().startswith(("=", "+", "-", "@")) else value
 
 
 @router.get("/portfolio.csv")

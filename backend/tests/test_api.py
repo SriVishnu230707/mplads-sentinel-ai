@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import datetime, timezone
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_mplads_sentinel.db"
@@ -7,8 +8,9 @@ os.environ["SECRET_KEY"] = "test-secret-that-is-long-enough-for-tests"
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.api.reports import safe_csv_value
 from app.database import SessionLocal
-from app.models import User
+from app.models import Alert, AlertStatus, Project, RiskLevel, User
 from app.seed import DEMO_PASSWORD
 from app.seed import seed_demo_data
 from app.security import hash_password, verify_password
@@ -173,10 +175,25 @@ def test_authorized_user_can_start_alert_review():
     with TestClient(app) as client:
         token = login(client, "ministry@sentinel.gov.in")
         headers = {"Authorization": f"Bearer {token}"}
-        client.post("/api/v1/risk/scan", headers=headers)
-        alerts = client.get("/api/v1/alerts?status=open", headers=headers).json()
-        assert alerts
-        review = client.patch(f"/api/v1/alerts/{alerts[0]['id']}", headers=headers, json={"status": "triaged"})
+        with SessionLocal() as db:
+            project = db.get(Project, "MPL-KA-24018")
+            assert project is not None
+            alert = Alert(
+                project_id=project.id,
+                rule_code=f"TEST_TRIAGE_{uuid.uuid4().hex}",
+                title="Alert triage test",
+                explanation="Synthetic test alert",
+                severity=RiskLevel.MODERATE,
+                score=40,
+                confidence=90,
+                status=AlertStatus.OPEN,
+                recommended_action="Review",
+                evidence={},
+            )
+            db.add(alert)
+            db.commit()
+            alert_id = alert.id
+        review = client.patch(f"/api/v1/alerts/{alert_id}", headers=headers, json={"status": "triaged"})
         assert review.status_code == 200
         assert review.json()["status"] == "triaged"
 
@@ -232,6 +249,18 @@ def test_api_security_headers_are_present_on_protected_responses():
         assert response.headers["x-frame-options"] == "DENY"
         assert response.headers["content-security-policy"] == "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
         assert response.headers["permissions-policy"] == "camera=(), geolocation=(), microphone=()"
+
+
+def test_request_id_is_bounded_before_reflection():
+    with TestClient(app) as client:
+        token = login(client, "auditor@sentinel.gov.in")
+        response = client.get("/api/v1/projects", headers={"Authorization": f"Bearer {token}", "X-Request-ID": "x" * 500})
+        assert response.status_code == 200
+        assert len(response.headers["x-request-id"]) <= 64
+
+
+def test_csv_exports_escape_whitespace_prefixed_formulas():
+    assert safe_csv_value(" =HYPERLINK(\"https://example.invalid\")") == "' =HYPERLINK(\"https://example.invalid\")"
 
 
 def test_phase4_prediction_evidence_and_import_controls_are_scoped():
@@ -314,13 +343,27 @@ def test_phase5_case_creation_is_idempotent_and_report_is_scoped():
 def test_case_closure_requires_independent_reviewer_and_note():
     with TestClient(app) as client:
         ministry_headers = {"Authorization": f"Bearer {login(client, 'ministry@sentinel.gov.in')}"}
-        client.post("/api/v1/risk/scan", headers=ministry_headers)
-        alert = client.get("/api/v1/alerts?status=open", headers=ministry_headers).json()[0]
-        result = client.post("/api/v1/cases", headers=ministry_headers, json={"alert_id": alert["id"]})
-        if result.status_code == 409:
-            case = next(item for item in client.get("/api/v1/cases", headers=ministry_headers).json() if item["alert_id"] == alert["id"])
-        else:
-            case = result.json()
+        with SessionLocal() as db:
+            project = db.get(Project, "MPL-KA-24018")
+            assert project is not None
+            alert = Alert(
+                project_id=project.id,
+                rule_code=f"TEST_CLOSURE_{uuid.uuid4().hex}",
+                title="Closure workflow test",
+                explanation="Synthetic test alert",
+                severity=RiskLevel.MODERATE,
+                score=40,
+                confidence=90,
+                status=AlertStatus.OPEN,
+                recommended_action="Review",
+                evidence={},
+            )
+            db.add(alert)
+            db.commit()
+            alert_id = alert.id
+        result = client.post("/api/v1/cases", headers=ministry_headers, json={"alert_id": alert_id})
+        assert result.status_code == 201
+        case = result.json()
         client.patch(f"/api/v1/cases/{case['id']}", headers=ministry_headers, json={"status": "investigating"})
         client.patch(f"/api/v1/cases/{case['id']}", headers=ministry_headers, json={"status": "closure_review"})
         forbidden = client.patch(f"/api/v1/cases/{case['id']}", headers=ministry_headers, json={"status": "closed", "closure_note": "same person"})

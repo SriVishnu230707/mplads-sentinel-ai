@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -9,7 +10,7 @@ DEVELOPMENT_SECRET = "development-only-secret-change-before-deployment"
 
 class Settings(BaseSettings):
     app_name: str = "MPLADS Sentinel API"
-    environment: str = "development"
+    environment: Literal["development", "test", "staging", "production"] = "development"
     database_url: str = "sqlite:///./mplads_sentinel.db"
     secret_key: str = Field(default=DEVELOPMENT_SECRET, min_length=32)
     access_token_minutes: int = 15
@@ -31,7 +32,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def reject_unsafe_production_settings(self) -> "Settings":
-        if self.environment.strip().lower() in {"production", "staging"}:
+        if self.environment != "development":
             if self.secret_key == DEVELOPMENT_SECRET:
                 raise ValueError("SECRET_KEY must be replaced before deployed startup")
             if self.auto_seed:

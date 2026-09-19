@@ -34,6 +34,11 @@ def test_staging_rejects_demo_auto_seed():
         )
 
 
+def test_unknown_environment_fails_closed():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, environment="prod")
+
+
 def test_production_accepts_hardened_configuration():
     settings = Settings(
         _env_file=None,

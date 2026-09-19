@@ -93,4 +93,4 @@ npm run build
 npm run test:api
 ```
 
-Current result: frontend build succeeds and all 25 API, security, configuration, lifecycle, integrity, and deployment-control tests pass.
+Current result: frontend build succeeds and all 28 API, security, configuration, lifecycle, integrity, and deployment-control tests pass.

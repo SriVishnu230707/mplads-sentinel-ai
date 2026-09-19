@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 import logging
+import re
 import uuid
 
 from fastapi import FastAPI, HTTPException, Request
@@ -48,7 +49,8 @@ app.add_middleware(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    supplied_request_id = request.headers.get("X-Request-ID", "")
+    request_id = supplied_request_id if re.fullmatch(r"[A-Za-z0-9-]{1,64}", supplied_request_id) else str(uuid.uuid4())
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
