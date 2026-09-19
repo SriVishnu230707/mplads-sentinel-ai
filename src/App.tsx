@@ -9,7 +9,7 @@ import {
   KeyRound, BadgeCheck, Globe2, BriefcaseBusiness,
 } from 'lucide-react'
 import { activity, states, trend, type Project, type RiskLevel } from './data'
-import { api, type ApiDashboardSummary, type ApiProject, type ApiUser } from './api'
+import { api, type ApiAlert, type ApiDashboardSummary, type ApiProject, type ApiProjectIntelligence, type ApiUser } from './api'
 
 type Page = 'overview' | 'alerts' | 'projects' | 'map' | 'cases' | 'reports' | 'admin' | 'profile'
 type Role = 'Ministry National Supervisor' | 'State Nodal Authority' | 'District Authority' | 'Auditor / Investigator'
@@ -400,12 +400,40 @@ function ProfileView({ user, role, onLogout }: { user: ApiUser; role: Role; onLo
 }
 
 function ProjectDrawer({ project, onClose }: { project: Project; onClose: () => void }) {
-  const signals = [
-    { label: 'Payment–progress mismatch', score: 94, text: `${Math.round(project.spent / project.sanctioned * 100)}% of sanctioned value spent with ${project.progress}% physical progress.` },
-    { label: 'Cost benchmark deviation', score: 78, text: 'Estimated cost is above the peer range for comparable works.' },
-    { label: 'Evidence confidence', score: 66, text: 'Latest physical evidence is 46 days old.' },
-  ]
-  return <><div className="drawer-scrim" onClick={onClose}/><aside className="drawer"><header><div><span className="drawer-label">PROJECT RISK PROFILE</span><h2>{project.title}</h2><p>{project.id} · {project.location}</p></div><button className="icon-button" onClick={onClose} aria-label="Close project details"><X size={20}/></button></header><div className="drawer-body"><div className="risk-hero"><div className={`risk-ring ring-${project.level.toLowerCase()}`}><strong>{project.risk}</strong><span>/100</span></div><div><span className={riskClass(project.level)}><i/>{project.level} risk</span><h3>Human review recommended</h3><p>Signals are indicators, not a determination of fraud.</p></div></div><div className="quick-facts"><div><span>Sanctioned</span><strong>{formatCrore(project.sanctioned / 100)}</strong></div><div><span>Spent</span><strong>{formatCrore(project.spent / 100)}</strong></div><div><span>Progress</span><strong>{project.progress}%</strong></div></div><section className="drawer-section"><h3>Why this was flagged</h3>{signals.map(s => <article className="signal" key={s.label}><div className="signal-head"><strong>{s.label}</strong><span>{s.score}% confidence</span></div><p>{s.text}</p><div><span style={{width: `${s.score}%`}}/></div></article>)}</section><section className="drawer-section"><h3>Accountable timeline</h3>{['Sanction approved · 14 May 2025', 'First payment recorded · 02 Jul 2025', 'Progress updated to 34% · 18 Aug 2026', 'Risk alert generated · Today, 09:42'].map((x,i) => <div className="timeline-item" key={x}><span className={i === 3 ? 'current' : ''}>{i === 3 && <Check size={12}/>}</span><p>{x}</p></div>)}</section></div><footer><button className="button secondary">View complete record</button><button className="button primary"><ClipboardCheck size={17}/> Create review case</button></footer></aside></>
+  const [intelligence, setIntelligence] = useState<ApiProjectIntelligence | null>(null)
+  const [alert, setAlert] = useState<ApiAlert | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [actionMessage, setActionMessage] = useState('')
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setIntelligence(null)
+    setAlert(null)
+    setActionMessage('')
+    Promise.all([api.intelligence(project.id), api.alerts()])
+      .then(([result, alerts]) => {
+        if (!active) return
+        setIntelligence(result)
+        setAlert(alerts.find(item => item.project_id === project.id && item.status === 'open') ?? null)
+      })
+      .catch(() => active && setActionMessage('Live intelligence is temporarily unavailable.'))
+      .finally(() => active && setLoading(false))
+    return () => { active = false }
+  }, [project.id])
+
+  const startReview = async () => {
+    if (!alert) return
+    try {
+      const updated = await api.updateAlert(alert.id, 'triaged')
+      setAlert(updated)
+      setActionMessage('Review started and recorded in the audit trail.')
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : 'Unable to start the review.')
+    }
+  }
+
+  return <><div className="drawer-scrim" onClick={onClose}/><aside className="drawer"><header><div><span className="drawer-label">PHASE 3 INTELLIGENCE PROFILE</span><h2>{project.title}</h2><p>{project.id} · {project.location}</p></div><button className="icon-button" onClick={onClose} aria-label="Close project details"><X size={20}/></button></header><div className="drawer-body"><div className="risk-hero"><div className={`risk-ring ring-${project.level.toLowerCase()}`}><strong>{project.risk}</strong><span>/100</span></div><div><span className={riskClass(project.level)}><i/>{project.level} risk</span><h3>Human review recommended</h3><p>Signals are indicators, not a determination of fraud.</p></div></div><div className="quick-facts"><div><span>Sanctioned</span><strong>{formatCrore(project.sanctioned / 100)}</strong></div><div><span>Spent</span><strong>{formatCrore(project.spent / 100)}</strong></div><div><span>Progress</span><strong>{project.progress}%</strong></div></div>{loading && <p className="intelligence-loading">Loading authorized intelligence…</p>}{intelligence && <><section className="drawer-section"><div className="section-title-row"><h3>Project health</h3><span className={`health-badge ${intelligence.health_band.toLowerCase().replaceAll(' ', '-')}`}>{intelligence.health_score}/100 · {intelligence.health_band}</span></div><div className="health-track"><span style={{width: `${intelligence.health_score}%`}}/></div></section><section className="drawer-section"><h3>Compliance watch</h3>{intelligence.compliance.map(item => <article className="compliance-item" key={item.label}><span className={`compliance-dot ${item.status}`}/><div><strong>{item.label}</strong><p>{item.detail}</p></div><small>{item.status}</small></article>)}</section><section className="drawer-section"><h3>Potential duplicate works</h3>{intelligence.duplicate_candidates.length ? intelligence.duplicate_candidates.map(candidate => <article className="duplicate-item" key={candidate.project_id}><div><strong>{candidate.title}</strong><p>{candidate.project_id} · {candidate.location}</p><small>{candidate.reasons.join(' · ')}</small></div><b>{candidate.similarity_score}%</b></article>) : <p className="empty-intelligence">No similar works crossed the review threshold.</p>}</section><section className="drawer-section"><h3>Risk history</h3>{intelligence.risk_timeline.map((point, index) => <div className="timeline-item" key={`${point.recorded_at}-${point.score}`}><span className={index === intelligence.risk_timeline.length - 1 ? 'current' : ''}>{index === intelligence.risk_timeline.length - 1 && <Check size={12}/>}</span><p><strong>{point.score}/100 · {point.level}</strong><br/>{new Date(point.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p></div>)}</section></>}</div><footer>{actionMessage && <span className="drawer-message">{actionMessage}</span>}<button className="button secondary" onClick={onClose}>Close</button>{alert?.status === 'open' && <button className="button primary" onClick={startReview}><ClipboardCheck size={17}/> Start review</button>}</footer></aside></>
 }
 
 function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: ApiUser) => void }) {

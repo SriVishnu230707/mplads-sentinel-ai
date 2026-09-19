@@ -41,6 +41,23 @@ export type ApiDashboardSummary = {
   risk_distribution: Record<ApiProject['risk_level'], number>
 }
 
+export type ApiAlert = {
+  id: string
+  project_id: string
+  title: string
+  status: 'open' | 'triaged' | 'resolved' | 'dismissed'
+  severity: ApiProject['risk_level']
+}
+
+export type ApiProjectIntelligence = {
+  project_id: string
+  health_score: number
+  health_band: string
+  compliance: Array<{ label: string; status: 'met' | 'attention' | 'overdue'; detail: string }>
+  duplicate_candidates: Array<{ project_id: string; title: string; location: string; similarity_score: number; reasons: string[] }>
+  risk_timeline: Array<{ score: number; level: ApiProject['risk_level']; recorded_at: string }>
+}
+
 let accessToken: string | null = null
 let refreshPromise: Promise<boolean> | null = null
 
@@ -112,6 +129,9 @@ export const api = {
 
   me: () => request<ApiUser>('/auth/me'),
   projects: () => request<ApiProject[]>('/projects'),
+  intelligence: (projectId: string) => request<ApiProjectIntelligence>(`/projects/${encodeURIComponent(projectId)}/intelligence`),
+  alerts: () => request<ApiAlert[]>('/alerts'),
+  updateAlert: (alertId: string, status: ApiAlert['status']) => request<ApiAlert>(`/alerts/${encodeURIComponent(alertId)}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   dashboardSummary: () => request<ApiDashboardSummary>('/dashboard/summary'),
   scan: () => request<{ projects_scanned: number; alerts_created: number; scores_updated: number }>('/risk/scan', { method: 'POST' }),
 

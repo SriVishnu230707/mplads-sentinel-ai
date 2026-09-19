@@ -65,6 +65,9 @@ npm run preview
 - Explainable payment-progress, cost, evidence and delay rules
 - Idempotent risk alert creation and access audit events
 - Responsive navigation and dark theme
+- Phase 3 project-health score, compliance watch, and historical risk timeline
+- Scoped duplicate-work matching with explainable similarity factors
+- Human alert-triage action recorded in the audit trail
 
 The seeded data is synthetic. The backend authorizes every protected request; frontend visibility is never treated as an access-control boundary.
 
@@ -75,4 +78,4 @@ npm run build
 npm run test:api
 ```
 
-Current result: frontend build succeeds and all 13 API/security and configuration tests pass.
+Current result: frontend build succeeds and all 15 API/security, configuration, and Phase 3 intelligence tests pass.
