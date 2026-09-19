@@ -30,5 +30,8 @@ def test_production_accepts_hardened_configuration():
         environment="production",
         auto_seed=False,
         secret_key="production-test-secret-with-at-least-32-characters",
+        database_url="postgresql+psycopg://sentinel:password@db:5432/mplads",
+        redis_url="redis://redis:6379/0",
+        frontend_origins=["https://sentinel.example.gov.in"],
     )
     assert settings.environment == "production"

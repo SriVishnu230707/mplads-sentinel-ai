@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+import logging
+import uuid
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -39,7 +42,12 @@ app.add_middleware(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if request.method in {"POST", "PUT", "PATCH"} and content_length and int(content_length) > settings.max_request_bytes:
+        raise HTTPException(status_code=413, detail="Request body is too large")
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -60,6 +68,18 @@ async def unhandled_error(_: Request, __: Exception):
 @app.get("/health", tags=["system"])
 def health() -> dict[str, str]:
     return {"status": "ok", "service": settings.app_name, "version": "0.2.0"}
+
+
+@app.get("/ready", tags=["system"])
+def readiness() -> dict[str, str]:
+    """Probe database connectivity without exposing configuration details."""
+    try:
+        with engine.connect() as connection:
+            connection.exec_driver_sql("SELECT 1")
+    except Exception as exc:
+        logging.getLogger(__name__).warning("readiness probe failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Service dependencies are unavailable") from exc
+    return {"status": "ready"}
 
 
 app.include_router(auth.router, prefix="/api/v1")

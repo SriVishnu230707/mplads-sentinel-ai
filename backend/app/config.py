@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     frontend_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     development_origin_regex: str = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
     auto_seed: bool = True
+    redis_url: str | None = None
+    max_request_bytes: int = 1_048_576
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -34,6 +36,12 @@ class Settings(BaseSettings):
                 raise ValueError("SECRET_KEY must be replaced before production startup")
             if self.auto_seed:
                 raise ValueError("AUTO_SEED must be disabled before production startup")
+            if self.database_url.startswith("sqlite"):
+                raise ValueError("DATABASE_URL must use PostgreSQL before production startup")
+            if not self.redis_url or not self.redis_url.startswith(("redis://", "rediss://")):
+                raise ValueError("REDIS_URL is required for production rate limiting")
+            if not self.frontend_origins or any(not origin.startswith("https://") for origin in self.frontend_origins):
+                raise ValueError("FRONTEND_ORIGINS must contain explicit HTTPS origins in production")
         return self
 
 
