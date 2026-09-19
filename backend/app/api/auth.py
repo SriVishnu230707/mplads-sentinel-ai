@@ -42,7 +42,7 @@ def set_refresh_cookie(response: Response, refresh_token: str) -> None:
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)) -> AccessToken:
     normalized_email = payload.email.strip().lower()
     user = db.scalar(select(User).where(User.email == normalized_email))
-    if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
+    if not user or not user.is_active or not user.organization.is_active or not verify_password(payload.password, user.password_hash):
         record_event(db, action="auth.login", entity_type="session", outcome="denied", details={"email": normalized_email})
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
@@ -66,7 +66,7 @@ def refresh(response: Response, sentinel_refresh: str | None = Cookie(default=No
     user = db.get(User, claims.get("sub"))
     now = datetime.now(timezone.utc)
     session_expiry = session.expires_at.replace(tzinfo=timezone.utc) if session and session.expires_at.tzinfo is None else (session.expires_at if session else now)
-    if not session or not user or session.revoked_at or session_expiry <= now or session.token_hash != hash_token(sentinel_refresh) or user.token_version != claims.get("ver"):
+    if not session or not user or not user.is_active or not user.organization.is_active or session.revoked_at or session_expiry <= now or session.token_hash != hash_token(sentinel_refresh) or user.token_version != claims.get("ver"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh session is no longer valid")
     session.revoked_at = now
     access, refresh_token = issue_pair(db, user)

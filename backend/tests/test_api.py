@@ -106,3 +106,30 @@ def test_demo_seed_repairs_malformed_legacy_hash():
         db.refresh(user)
 
         assert verify_password(DEMO_PASSWORD, user.password_hash)
+
+
+def test_disabled_organization_blocks_login_access_and_refresh():
+    with TestClient(app) as client:
+        token = login(client, "district@sentinel.gov.in")
+        with SessionLocal() as db:
+            user = db.scalar(select(User).where(User.email == "district@sentinel.gov.in"))
+            assert user is not None
+            organization = user.organization
+            organization.is_active = False
+            db.commit()
+
+        try:
+            headers = {"Authorization": f"Bearer {token}"}
+            assert client.get("/api/v1/auth/me", headers=headers).status_code == 401
+            assert client.post("/api/v1/auth/refresh").status_code == 401
+            denied = client.post(
+                "/api/v1/auth/login",
+                json={"email": "district@sentinel.gov.in", "password": DEMO_PASSWORD},
+            )
+            assert denied.status_code == 401
+        finally:
+            with SessionLocal() as db:
+                user = db.scalar(select(User).where(User.email == "district@sentinel.gov.in"))
+                assert user is not None
+                user.organization.is_active = True
+                db.commit()

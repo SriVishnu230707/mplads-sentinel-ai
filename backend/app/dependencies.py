@@ -24,7 +24,7 @@ def get_current_user(
     except jwt.InvalidTokenError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token") from exc
     user = db.get(User, payload.get("sub"))
-    if not user or not user.is_active or user.token_version != payload.get("ver"):
+    if not user or not user.is_active or not user.organization.is_active or user.token_version != payload.get("ver"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session is no longer valid")
     return user
 
@@ -47,4 +47,3 @@ def apply_project_scope(query, user: User):
     if org.level.value == "district":
         return query.where(Project.state == org.state, Project.district == org.district)
     return query.where(Project.id == "__no_access__")
-
