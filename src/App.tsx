@@ -8,7 +8,7 @@ import {
   Users, X, Zap, LogOut, Eye, EyeOff, UserRound, Mail, MapPin, Fingerprint,
   KeyRound, BadgeCheck, Globe2, BriefcaseBusiness, Printer, FileText, CheckCircle2, ArrowRight,
 } from 'lucide-react'
-import { activity, states, trend, type Project, type RiskLevel } from './data'
+import { activity, states, stateProgressData, trend, type DistrictProgress, type Project, type RiskLevel, type StateProgress } from './data'
 import { api, type ApiAlert, type ApiDashboardSummary, type ApiDelayPrediction, type ApiProject, type ApiProjectIntelligence, type ApiUser } from './api'
 import { GisMap, type MapMode } from './GisMap'
 
@@ -513,6 +513,43 @@ function Overview({
 
   const priorityProjects = useMemo(() => [...projects].sort((a, b) => b.risk - a.risk).slice(0, 4), [projects])
 
+  const [chartMode, setChartMode] = useState<'trend' | 'states' | 'districts'>('trend')
+  const [selectedStateName, setSelectedStateName] = useState<string>('Karnataka')
+
+  const selectedStateData = useMemo(() => {
+    return stateProgressData.find(s => s.name === selectedStateName) ?? stateProgressData[0]
+  }, [selectedStateName])
+
+  const handleSelectAnalyticsState = (stateName: string) => {
+    setSelectedStateName(stateName)
+    setChartMode('districts')
+  }
+
+  const chartHeader = useMemo(() => {
+    if (chartMode === 'trend') {
+      return {
+        title: 'Risk intelligence trend',
+        subtitle: 'Detected vs. resolved signals · last 6 months',
+        action: 'View analytics',
+        onAction: () => setChartMode('states'),
+      }
+    }
+    if (chartMode === 'states') {
+      return {
+        title: 'State progress analytics',
+        subtitle: 'Comparative execution progress & fund absorption across states · Click any state to view district graph',
+        action: 'View risk trend',
+        onAction: () => setChartMode('trend'),
+      }
+    }
+    return {
+      title: `${selectedStateName} district progress`,
+      subtitle: `District-level physical execution & milestone progress in ${selectedStateName}`,
+      action: '← All states',
+      onAction: () => setChartMode('states'),
+    }
+  }, [chartMode, selectedStateName])
+
   return <>
     <section className="metrics-grid">
       <Metric icon={FolderKanban} label="Active works" value={summary ? summary.active_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.delayed_works) : '—'} note="delayed works in your scope" color="teal" onClick={onNavigateProjects} />
@@ -523,8 +560,56 @@ function Overview({
 
     <section className="dashboard-grid">
       <div className="card risk-trend-card">
-        <CardHeader title="Risk intelligence trend" subtitle="Detected vs. resolved signals · last 6 months" action="View analytics" onAction={onNavigateReports} />
-        <TrendChart />
+        <CardHeader
+          title={chartHeader.title}
+          subtitle={chartHeader.subtitle}
+          action={chartHeader.action}
+          onAction={chartHeader.onAction}
+        />
+
+        <div className="chart-tab-strip">
+          <div className="chart-tab-pills" role="tablist" aria-label="Chart view mode">
+            <button
+              type="button"
+              className={`chart-tab-btn ${chartMode === 'trend' ? 'active' : ''}`}
+              onClick={() => setChartMode('trend')}
+            >
+              <Activity size={13} /> Risk trend
+            </button>
+            <button
+              type="button"
+              className={`chart-tab-btn ${chartMode === 'states' ? 'active' : ''}`}
+              onClick={() => setChartMode('states')}
+            >
+              <BarChart3 size={13} /> State progress
+            </button>
+            <button
+              type="button"
+              className={`chart-tab-btn ${chartMode === 'districts' ? 'active' : ''}`}
+              onClick={() => setChartMode('districts')}
+            >
+              <Network size={13} /> District progress {chartMode === 'districts' && `(${selectedStateName})`}
+            </button>
+          </div>
+
+          <span className="chart-context-badge">
+            {chartMode === 'trend' && 'Trend monitoring'}
+            {chartMode === 'states' && '5 states benchmarked'}
+            {chartMode === 'districts' && `${selectedStateData.districts.length} districts mapped`}
+          </span>
+        </div>
+
+        {chartMode === 'trend' && <TrendChart />}
+        {chartMode === 'states' && (
+          <StateProgressChart onSelectState={handleSelectAnalyticsState} />
+        )}
+        {chartMode === 'districts' && (
+          <DistrictProgressChart
+            stateName={selectedStateName}
+            onBack={() => setChartMode('states')}
+            onSelectState={(name) => setSelectedStateName(name)}
+          />
+        )}
       </div>
       <div className="card map-card">
         <CardHeader title="National risk distribution" subtitle="Live satellite & project-risk concentration" action="Open full map" onAction={onNavigateMap} />
@@ -588,6 +673,245 @@ function TrendChart() {
   const pointsA = trend.map((d, i) => `${42 + i * 86},${160 - (d.detected / max) * 120}`).join(' ')
   const pointsB = trend.map((d, i) => `${42 + i * 86},${160 - (d.resolved / max) * 120}`).join(' ')
   return <div className="chart-wrap"><div className="chart-legend"><span><i className="dot detected" />Risk detected</span><span><i className="dot resolved" />Resolved</span><b>+18.6% resolution rate</b></div><svg viewBox="0 0 520 190" role="img" aria-label="Risk intelligence trend line chart"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#df6b58" stopOpacity=".28"/><stop offset="1" stopColor="#df6b58" stopOpacity="0"/></linearGradient></defs>{[40,80,120,160].map(y => <line key={y} x1="42" x2="478" y1={y} y2={y} className="grid-line"/>)}<polygon points={`42,160 ${pointsA} 472,160`} fill="url(#area)"/><polyline points={pointsA} className="line detected-line"/><polyline points={pointsB} className="line resolved-line"/>{trend.map((d, i) => <g key={d.month}><text x={42 + i * 86} y="183" textAnchor="middle">{d.month}</text><circle cx={42 + i * 86} cy={160 - (d.detected / max) * 120} r="3.8" className="point detected-point"/><circle cx={42 + i * 86} cy={160 - (d.resolved / max) * 120} r="3.8" className="point resolved-point"/></g>)}</svg></div>
+}
+
+function StateProgressChart({ onSelectState }: { onSelectState: (stateName: string) => void }) {
+  const [hoveredState, setHoveredState] = useState<string | null>(null)
+
+  return (
+    <div className="analytics-chart-container">
+      <div className="analytics-meta-strip">
+        <span><b>5</b> States Assessed</span>
+        <span>Avg. Physical Progress: <b>70.6%</b></span>
+        <span>Avg. Fund Absorption: <b>73.6%</b></span>
+        <small className="hint-pill">Click any state to view district graph</small>
+      </div>
+
+      <div className="state-chart-body">
+        {stateProgressData.map((st) => (
+          <div
+            key={st.name}
+            className={`state-progress-row ${hoveredState === st.name ? 'hovered' : ''}`}
+            onClick={() => onSelectState(st.name)}
+            onMouseEnter={() => setHoveredState(st.name)}
+            onMouseLeave={() => setHoveredState(null)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onSelectState(st.name)
+              }
+            }}
+            title={`Click to open ${st.name} district progress graph`}
+          >
+            <div className="state-row-info">
+              <strong>{st.name}</strong>
+              <span>{st.totalWorks.toLocaleString('en-IN')} works · ₹{st.spentCrore} Cr / ₹{st.sanctionedCrore} Cr</span>
+            </div>
+            <div className="state-bars-wrap">
+              <div className="dual-track">
+                <div
+                  className="bar physical-bar"
+                  style={{ width: `${st.progress}%` }}
+                >
+                  <span className="bar-label">{st.progress}% physical</span>
+                </div>
+                <div
+                  className="financial-marker"
+                  style={{ left: `${st.financialProgress}%` }}
+                  title={`Financial absorption: ${st.financialProgress}%`}
+                />
+              </div>
+            </div>
+            <div className="state-row-action">
+              <span className="drilldown-badge">Districts <ChevronRight size={13} /></span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="analytics-legend">
+        <span><i className="legend-box physical" /> Physical Progress (%)</span>
+        <span><i className="legend-line financial" /> Financial Absorption Marker</span>
+        <span className="milestone-text">Click state row to open district graph</span>
+      </div>
+    </div>
+  )
+}
+
+function DistrictProgressChart({
+  stateName,
+  onBack,
+  onSelectState,
+}: {
+  stateName: string
+  onBack: () => void
+  onSelectState: (name: string) => void
+}) {
+  const stateData = useMemo(() => {
+    return stateProgressData.find(s => s.name === stateName) || stateProgressData[0]
+  }, [stateName])
+
+  const [activeDistrict, setActiveDistrict] = useState<DistrictProgress | null>(null)
+
+  return (
+    <div className="analytics-chart-container">
+      {/* State Switcher Chips */}
+      <div className="district-state-chips">
+        <button className="back-link-btn" onClick={onBack} title="Back to All States">
+          <ChevronLeft size={15} /> All states
+        </button>
+        <div className="chips-list">
+          {stateProgressData.map(s => (
+            <button
+              key={s.name}
+              type="button"
+              className={`state-chip ${s.name === stateData.name ? 'active' : ''}`}
+              onClick={() => onSelectState(s.name)}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* State Overview Header */}
+      <div className="district-summary-banner">
+        <div>
+          <span>Selected State</span>
+          <strong>{stateData.name}</strong>
+        </div>
+        <div>
+          <span>Physical Progress</span>
+          <strong className="text-green">{stateData.progress}% avg</strong>
+        </div>
+        <div>
+          <span>Financial Absorption</span>
+          <strong className="text-blue">{stateData.financialProgress}%</strong>
+        </div>
+        <div>
+          <span>Districts Mapped</span>
+          <strong>{stateData.districts.length} districts</strong>
+        </div>
+      </div>
+
+      {/* District Progress Graph: Grouped Bar/Column SVG Chart */}
+      <div className="district-graph-wrap">
+        <svg viewBox="0 0 540 175" className="district-svg-chart" role="img" aria-label={`District progress chart for ${stateData.name}`}>
+          {/* Reference grid lines */}
+          {[0, 25, 50, 75, 100].map(val => {
+            const y = 142 - (val / 100) * 115
+            return (
+              <g key={val}>
+                <line x1="38" y1={y} x2="530" y2={y} className="grid-line" strokeDasharray={val === 50 || val === 75 ? '3 3' : undefined} />
+                <text x="30" y={y + 3} textAnchor="end" className="district-axis-text">{val}%</text>
+              </g>
+            )
+          })}
+
+          {/* District Bars */}
+          {stateData.districts.map((dist, i) => {
+            const numDistricts = stateData.districts.length
+            const slotWidth = (490 - 45) / numDistricts
+            const barW = Math.max(12, Math.min(22, slotWidth * 0.35))
+            const slotCenter = 45 + (i + 0.5) * slotWidth
+            const physX = slotCenter - barW - 1
+            const finX = slotCenter + 1
+
+            const physHeight = (dist.progress / 100) * 115
+            const physY = 142 - physHeight
+
+            const finHeight = (dist.financialProgress / 100) * 115
+            const finY = 142 - finHeight
+
+            const isHovered = activeDistrict?.name === dist.name
+
+            return (
+              <g
+                key={dist.name}
+                className={`district-bar-group ${isHovered ? 'hovered' : ''}`}
+                onMouseEnter={() => setActiveDistrict(dist)}
+                onMouseLeave={() => setActiveDistrict(null)}
+                onClick={() => setActiveDistrict(dist)}
+                style={{ cursor: 'pointer' }}
+                role="button"
+                tabIndex={0}
+                aria-label={`${dist.name}: ${dist.progress}% progress, ${dist.financialProgress}% financial`}
+              >
+                {/* Physical Progress Bar */}
+                <rect
+                  x={physX}
+                  y={physY}
+                  width={barW}
+                  height={physHeight}
+                  rx="3"
+                  className="bar-rect physical"
+                />
+
+                {/* Financial Progress Bar */}
+                <rect
+                  x={finX}
+                  y={finY}
+                  width={barW}
+                  height={finHeight}
+                  rx="3"
+                  className="bar-rect financial"
+                />
+
+                {/* District Label */}
+                <text
+                  x={slotCenter}
+                  y="158"
+                  textAnchor="middle"
+                  className="district-axis-text"
+                >
+                  {dist.name.replace('Bengaluru', 'Blr').replace('Metropolitan', 'Metro')}
+                </text>
+                
+                {/* Physical value */}
+                <text
+                  x={slotCenter}
+                  y={Math.min(physY, finY) - 5}
+                  textAnchor="middle"
+                  className="bar-val-text"
+                >
+                  {dist.progress}%
+                </text>
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+
+      {/* District Detail Tooltip / Card */}
+      {activeDistrict ? (
+        <div className="district-detail-card">
+          <div className="district-detail-head">
+            <strong>{activeDistrict.name}</strong>
+            <span className="signal-pill">{activeDistrict.primarySignal}</span>
+          </div>
+          <div className="district-metrics-row">
+            <div><span>Physical Progress</span><b>{activeDistrict.progress}%</b></div>
+            <div><span>Financial Utilization</span><b>{activeDistrict.financialProgress}% (₹{activeDistrict.spentLakh}L / ₹{activeDistrict.sanctionedLakh}L)</b></div>
+            <div><span>Active Works</span><b>{activeDistrict.totalWorks} works</b></div>
+            <div><span>Delayed Works</span><b className="text-amber">{activeDistrict.delayedWorks} delayed</b></div>
+          </div>
+        </div>
+      ) : (
+        <div className="district-detail-card placeholder">
+          <span>Hover or tap any district bar to inspect physical execution, financial tranches and delay signals</span>
+        </div>
+      )}
+
+      {/* Legend */}
+      <div className="analytics-legend">
+        <span><i className="legend-box physical" /> Physical Progress (%)</span>
+        <span><i className="legend-box financial" /> Financial Utilization (%)</span>
+        <span className="milestone-text">--- 50% & 75% Target Milestones</span>
+      </div>
+    </div>
+  )
 }
 
 function ProjectTable({ projects, onSelect, compact = false }: { projects: Project[]; onSelect: (p: Project) => void; compact?: boolean }) {
