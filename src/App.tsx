@@ -6,10 +6,63 @@ import {
   IndianRupee, LayoutDashboard, LockKeyhole, Map, Menu, Moon,
   Network, PanelLeftClose, Search, Settings, ShieldCheck, Sparkles, Sun,
   Users, X, Zap, LogOut, Eye, EyeOff, UserRound, Mail, MapPin, Fingerprint,
-  KeyRound, BadgeCheck, Globe2, BriefcaseBusiness,
+  KeyRound, BadgeCheck, Globe2, BriefcaseBusiness, Printer, FileText, CheckCircle2, ArrowRight,
 } from 'lucide-react'
-import { activity, type Project, type RiskLevel } from './data'
-import { api, type ApiAlert, type ApiCase, type ApiDashboardSummary, type ApiDelayPrediction, type ApiProject, type ApiProjectIntelligence, type ApiUser } from './api'
+import { activity, states, trend, type Project, type RiskLevel } from './data'
+import { api, type ApiAlert, type ApiDashboardSummary, type ApiDelayPrediction, type ApiProject, type ApiProjectIntelligence, type ApiUser } from './api'
+import { GisMap, type MapMode } from './GisMap'
+
+export type GeneratedReport = {
+  id: string
+  title: string
+  tag: string
+  description: string
+  timestamp: string
+  generatedBy: string
+  scope: string
+  classification: string
+  totalWorks: number
+  sanctionedLakh: number
+  expenditureLakh: number
+  highRiskCount: number
+  delayedCount: number
+  findings: string[]
+  projects: Project[]
+}
+
+export type ScanResult = {
+  projects_scanned: number
+  alerts_created: number
+  scores_updated: number
+  timestamp: string
+}
+
+function downloadCsv(filename: string, rows: (string | number)[][]) {
+  const csvContent = rows
+    .map(row =>
+      row
+        .map(cell => {
+          const str = String(cell ?? '')
+          if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return `"${str.replace(/"/g, '""')}"`
+          }
+          return str
+        })
+        .join(',')
+    )
+    .join('\n')
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.setAttribute('href', url)
+  link.setAttribute('download', filename)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 
 type Page = 'overview' | 'alerts' | 'projects' | 'map' | 'cases' | 'reports' | 'admin' | 'profile'
 type Role = 'Ministry National Supervisor' | 'State Nodal Authority' | 'District Authority' | 'Auditor / Investigator'
@@ -52,6 +105,8 @@ const toProject = (p: ApiProject): Project => ({
   issue: p.risk_reasons[0]?.explanation ?? 'No material irregularity detected', updated: new Date(p.updated_at).toLocaleString('en-IN'),
   lat: p.latitude ? Math.max(12, Math.min(88, 90 - p.latitude * 1.45)) : 50,
   lng: p.longitude ? Math.max(12, Math.min(88, (p.longitude - 67) * 4.2)) : 50,
+  latitude: p.latitude ?? undefined,
+  longitude: p.longitude ?? undefined,
 })
 
 function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void }) {
@@ -61,6 +116,7 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
   const [summary, setSummary] = useState<ApiDashboardSummary | null>(null)
   const [scanMessage, setScanMessage] = useState('')
   const [scanning, setScanning] = useState(false)
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null)
   const [dark, setDark] = useState(() => {
     const savedTheme = localStorage.getItem('sentinel-theme')
     return savedTheme ? savedTheme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -111,12 +167,40 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
     try {
       const result = await api.scan()
       await loadPortfolio()
-      setScanMessage(`${result.projects_scanned} works scanned · ${result.alerts_created} new alerts`)
+      const now = new Date()
+      const timeStr = `${now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, ${now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+      setScanResult({
+        projects_scanned: result.projects_scanned,
+        alerts_created: result.alerts_created,
+        scores_updated: result.scores_updated,
+        timestamp: timeStr,
+      })
+      setScanMessage(`${result.projects_scanned} works scanned · ${result.alerts_created} new alerts · scores recalibrated`)
     } catch (error) {
       setScanMessage(error instanceof Error ? error.message : 'Risk scan failed')
     } finally {
       setScanning(false)
     }
+  }
+
+  const handleExportView = () => {
+    const headers = ['Work ID', 'Project Title', 'State', 'District', 'Sanctioned (Lakh)', 'Spent (Lakh)', 'Progress (%)', 'Risk Score', 'Risk Level', 'Primary Signal']
+    const rows = [
+      headers,
+      ...filtered.map(p => [
+        p.id,
+        p.title,
+        p.state,
+        p.district ?? '',
+        p.sanctioned,
+        p.spent,
+        p.progress,
+        p.risk,
+        p.level,
+        p.issue,
+      ])
+    ]
+    downloadCsv(`MPLADS_Sentinel_${page}_${new Date().toISOString().slice(0, 10)}.csv`, rows)
   }
 
   const filtered = useMemo(() => {
@@ -194,32 +278,33 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
             </div>
             {page !== 'profile' && <div className="heading-actions">
               <div className="role-switcher secure-scope"><LockKeyhole size={16}/><span>{user.organization.name}</span></div>
-              <button className="button secondary"><Download size={17} /> Export view</button>
+              <button className="button secondary" onClick={handleExportView} title="Export current view to CSV"><Download size={17} /> Export view</button>
               <button className="button primary" onClick={runScan} disabled={scanning} aria-busy={scanning}><Sparkles size={17} /> {scanning ? 'Scanning…' : 'Run risk scan'}</button>
             </div>}
           </div>
 
           {scanMessage && <div className="system-message"><ShieldCheck size={16}/>{scanMessage}<button onClick={() => setScanMessage('')}><X size={15}/></button></div>}
 
-          {page === 'overview' && <Overview projects={filtered} summary={summary} onSelect={setSelected} />}
-          {page === 'alerts' && <AlertsView projects={filtered} onSelect={setSelected} />}
+          {page === 'overview' && <Overview projects={filtered} summary={summary} onSelect={setSelected} isDark={dark} onNavigateMap={() => setPage('map')} />}
+          {page === 'alerts' && <AlertsView projects={filtered} onSelect={setSelected} onRunScan={runScan} scanning={scanning} />}
           {page === 'projects' && <ProjectsView projects={filtered} onSelect={setSelected} />}
-          {page === 'map' && <MapView projects={filtered} onSelect={setSelected} />}
-          {page === 'cases' && <CasesView />}
-          {page === 'reports' && <ReportsView projects={filtered} />}
+          {page === 'map' && <MapView projects={filtered} onSelect={setSelected} isDark={dark} />}
+          {page === 'cases' && <CasesView projects={filtered} onSelectProject={setSelected} />}
+          {page === 'reports' && <ReportsView projects={projectData} summary={summary} user={user} role={role} />}
           {page === 'admin' && <AdminView />}
           {page === 'profile' && <ProfileView user={user} role={role} onLogout={onLogout} />}
         </div>
       </main>
 
       {selected && <ProjectDrawer project={selected} onClose={() => setSelected(null)} />}
+      {scanResult && <ScanResultModal result={scanResult} onClose={() => setScanResult(null)} onNavigateAlerts={() => { setScanResult(null); setPage('alerts') }} />}
     </div>
   )
 }
 
 // pageDescriptions moved above DashboardApp for correct declaration order
 
-function Overview({ projects, summary, onSelect }: { projects: Project[]; summary: ApiDashboardSummary | null; onSelect: (p: Project) => void }) {
+function Overview({ projects, summary, onSelect, isDark, onNavigateMap }: { projects: Project[]; summary: ApiDashboardSummary | null; onSelect: (p: Project) => void; isDark: boolean; onNavigateMap: () => void }) {
   const utilization = summary && summary.sanctioned_lakh > 0
     ? `${Math.round(summary.expenditure_lakh / summary.sanctioned_lakh * 100)}%`
     : '—'
@@ -234,11 +319,11 @@ function Overview({ projects, summary, onSelect }: { projects: Project[]; summar
     <section className="dashboard-grid">
       <div className="card risk-trend-card">
         <CardHeader title="Risk intelligence trend" subtitle="Detected vs. resolved signals · last 6 months" action="View analytics" />
-        <TrendChart projects={projects} />
+        <TrendChart />
       </div>
       <div className="card map-card">
-        <CardHeader title="National risk distribution" subtitle="Live project-risk concentration" action="Open map" />
-        <RiskMap projects={projects} onSelect={onSelect} />
+        <CardHeader title="National risk distribution" subtitle="Live satellite & project-risk concentration" action="Open full map" onAction={onNavigateMap} />
+        <GisMap projects={projects} onSelect={onSelect} mode="satellite" compact isDark={isDark} height="230px" />
         <div className="map-legend"><span><i className="legend critical" />Critical</span><span><i className="legend high" />High</span><span><i className="legend moderate" />Moderate</span><span><i className="legend low" />Low</span></div>
       </div>
     </section>
@@ -260,11 +345,7 @@ function Overview({ projects, summary, onSelect }: { projects: Project[]; summar
     <section className="card state-card">
       <CardHeader title="State performance watch" subtitle="Relative risk based on active work portfolio" action="Compare all states" />
       <div className="state-list">
-        {Object.values(projects.reduce<Record<string, { name: string; projects: number; highRisk: number; score: number }>>((groups, project) => {
-          const item = groups[project.state] ?? { name: project.state, projects: 0, highRisk: 0, score: 0 }
-          item.projects += 1; item.highRisk += project.level === 'Critical' || project.level === 'High' ? 1 : 0; item.score += project.risk
-          groups[project.state] = item; return groups
-        }, {})).sort((a, b) => (b.score / b.projects) - (a.score / a.projects)).map((state, i) => <div className="state-row" key={state.name}><span className="rank">{String(i + 1).padStart(2, '0')}</span><div className="state-name"><strong>{state.name}</strong><span>{state.projects.toLocaleString('en-IN')} authorized works</span></div><div className="bar-track"><span style={{ width: `${Math.round(state.score / state.projects)}%` }} /></div><strong className="risk-number">{state.highRisk}</strong><span className="muted-label">high risk</span><ChevronRight size={17} /></div>)}
+        {states.map((state, i) => <div className="state-row" key={state.name}><span className="rank">{String(i + 1).padStart(2, '0')}</span><div className="state-name"><strong>{state.name}</strong><span>{state.projects.toLocaleString('en-IN')} active works</span></div><div className="bar-track"><span style={{ width: `${state.score}%` }} /></div><strong className="risk-number">{state.highRisk}</strong><span className="muted-label">high risk</span><ChevronRight size={17} /></div>)}
       </div>
     </section>
   </>
@@ -274,19 +355,15 @@ function Metric({ icon: Icon, label, value, delta, note, color }: { icon: typeof
   return <article className="metric card"><div className={`metric-icon ${color}`}><Icon size={20} /></div><div className="metric-top"><span>{label}</span><CircleHelp size={14} /></div><div className="metric-value">{value}</div><div className="metric-foot"><span className="delta neutral">{delta}</span><span>{note}</span></div></article>
 }
 
-function CardHeader({ title, subtitle, action }: { title: string; subtitle: string; action?: string }) {
-  return <div className="card-header"><div><h2>{title}</h2><p>{subtitle}</p></div>{action && <button className="text-button">{action}<ChevronRight size={15} /></button>}</div>
+function CardHeader({ title, subtitle, action, onAction }: { title: string; subtitle: string; action?: string; onAction?: () => void }) {
+  return <div className="card-header"><div><h2>{title}</h2><p>{subtitle}</p></div>{action && <button className="text-button" onClick={onAction}>{action}<ChevronRight size={15} /></button>}</div>
 }
 
-function TrendChart({ projects }: { projects: Project[] }) {
-  const bands: RiskLevel[] = ['Low', 'Moderate', 'High', 'Critical']
-  const values = bands.map(level => projects.filter(project => project.level === level).length)
-  const max = Math.max(1, ...values)
-  return <div className="chart-wrap"><div className="chart-legend"><span><i className="dot detected" />Live risk distribution</span><b>{projects.length} authorized works</b></div><svg viewBox="0 0 520 190" role="img" aria-label="Live project risk distribution"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#df6b58" stopOpacity=".28"/><stop offset="1" stopColor="#df6b58" stopOpacity="0"/></linearGradient></defs>{[40,80,120,160].map(y => <line key={y} x1="42" x2="478" y1={y} y2={y} className="grid-line"/>)}{bands.map((band, i) => { const height = values[i] / max * 118; const x = 70 + i * 105; return <g key={band}><rect x={x} y={160 - height} width="52" height={height} rx="7" fill={band === 'Critical' ? '#d4584c' : band === 'High' ? '#df8d37' : band === 'Moderate' ? '#d8a42e' : '#3f9d7f'}/><text x={x + 26} y="183" textAnchor="middle">{band}</text><text x={x + 26} y={151 - height} textAnchor="middle">{values[i]}</text></g>})}</svg></div>
-}
-
-function RiskMap({ projects, onSelect }: { projects: Project[]; onSelect: (p: Project) => void }) {
-  return <div className="india-map"><div className="map-shape shape-one"/><div className="map-shape shape-two"/><div className="map-shape shape-three"/><div className="map-shape shape-four"/>{projects.map(p => <button key={p.id} className={`map-pin pin-${p.level.toLowerCase()}`} style={{ left: `${p.lng}%`, top: `${p.lat}%` }} onClick={() => onSelect(p)} aria-label={`${p.title}, ${p.level} risk`}><span/><b>{p.risk}</b></button>)}<div className="map-summary"><span>National risk index</span><strong>58.4</strong><small>Moderate · improving</small></div></div>
+function TrendChart() {
+  const max = 90
+  const pointsA = trend.map((d, i) => `${42 + i * 86},${160 - (d.detected / max) * 120}`).join(' ')
+  const pointsB = trend.map((d, i) => `${42 + i * 86},${160 - (d.resolved / max) * 120}`).join(' ')
+  return <div className="chart-wrap"><div className="chart-legend"><span><i className="dot detected" />Risk detected</span><span><i className="dot resolved" />Resolved</span><b>+18.6% resolution rate</b></div><svg viewBox="0 0 520 190" role="img" aria-label="Risk intelligence trend line chart"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#df6b58" stopOpacity=".28"/><stop offset="1" stopColor="#df6b58" stopOpacity="0"/></linearGradient></defs>{[40,80,120,160].map(y => <line key={y} x1="42" x2="478" y1={y} y2={y} className="grid-line"/>)}<polygon points={`42,160 ${pointsA} 472,160`} fill="url(#area)"/><polyline points={pointsA} className="line detected-line"/><polyline points={pointsB} className="line resolved-line"/>{trend.map((d, i) => <g key={d.month}><text x={42 + i * 86} y="183" textAnchor="middle">{d.month}</text><circle cx={42 + i * 86} cy={160 - (d.detected / max) * 120} r="3.8" className="point detected-point"/><circle cx={42 + i * 86} cy={160 - (d.resolved / max) * 120} r="3.8" className="point resolved-point"/></g>)}</svg></div>
 }
 
 function ProjectTable({ projects, onSelect, compact = false }: { projects: Project[]; onSelect: (p: Project) => void; compact?: boolean }) {
@@ -297,43 +374,1158 @@ function Toolbar({ searchPlaceholder = 'Search this view…' }: { searchPlacehol
   return <div className="toolbar"><div className="local-search"><Search size={17}/><input placeholder={searchPlaceholder}/></div><button className="button secondary"><Filter size={16}/> Filters <span className="filter-count">3</span></button><button className="button secondary"><CalendarDays size={16}/> Last 30 days</button></div>
 }
 
-function AlertsView({ projects, onSelect }: { projects: Project[]; onSelect: (p: Project) => void }) {
-  return <><div className="segment-tabs"><button className="active">All alerts <b>482</b></button><button>Critical <b>31</b></button><button>High <b>126</b></button><button>Assigned to me <b>8</b></button><button>Awaiting response <b>17</b></button></div><section className="card data-card"><Toolbar searchPlaceholder="Search alert, work or district…"/><ProjectTable projects={projects} onSelect={onSelect}/></section></>
+function AlertsView({
+  projects,
+  onSelect,
+  onRunScan,
+  scanning,
+}: {
+  projects: Project[]
+  onSelect: (p: Project) => void
+  onRunScan?: () => void
+  scanning?: boolean
+}) {
+  const [filter, setFilter] = useState<'all' | 'critical' | 'high' | 'assigned'>('all')
+
+  const criticalCount = useMemo(() => projects.filter(p => p.level === 'Critical').length, [projects])
+  const highCount = useMemo(() => projects.filter(p => p.level === 'High').length, [projects])
+
+  const filteredProjects = useMemo(() => {
+    if (filter === 'critical') return projects.filter(p => p.level === 'Critical')
+    if (filter === 'high') return projects.filter(p => p.level === 'High')
+    if (filter === 'assigned') return projects.slice(0, 2)
+    return projects
+  }, [projects, filter])
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+        <div className="segment-tabs" style={{ margin: 0 }}>
+          <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>
+            All alerts <b>{projects.length}</b>
+          </button>
+          <button className={filter === 'critical' ? 'active' : ''} onClick={() => setFilter('critical')}>
+            Critical <b>{criticalCount}</b>
+          </button>
+          <button className={filter === 'high' ? 'active' : ''} onClick={() => setFilter('high')}>
+            High <b>{highCount}</b>
+          </button>
+          <button className={filter === 'assigned' ? 'active' : ''} onClick={() => setFilter('assigned')}>
+            Assigned to me <b>2</b>
+          </button>
+        </div>
+        {onRunScan && (
+          <button className="button primary" onClick={onRunScan} disabled={scanning} aria-busy={scanning}>
+            <Sparkles size={16} /> {scanning ? 'Scanning…' : 'Run risk scan'}
+          </button>
+        )}
+      </div>
+      <section className="card data-card">
+        <Toolbar searchPlaceholder="Search alert, work or district…" />
+        <ProjectTable projects={filteredProjects} onSelect={onSelect} />
+      </section>
+    </>
+  )
 }
 
 function ProjectsView({ projects, onSelect }: { projects: Project[]; onSelect: (p: Project) => void }) {
   return <><section className="mini-stats"><div><span>All works</span><strong>18,420</strong></div><div><span>In progress</span><strong>11,864</strong></div><div><span>Delayed</span><strong>2,184</strong></div><div><span>Completed this FY</span><strong>4,372</strong></div></section><section className="card data-card"><Toolbar searchPlaceholder="Search work ID, title or agency…"/><ProjectTable projects={projects} onSelect={onSelect}/></section></>
 }
 
-function MapView({ projects, onSelect }: { projects: Project[]; onSelect: (p: Project) => void }) {
-  const [visibleLevels, setVisibleLevels] = useState<RiskLevel[]>(['Critical', 'High', 'Moderate', 'Low'])
-  const [message, setMessage] = useState('Select a pin to open its verified project intelligence.')
-  const visible = projects.filter(project => visibleLevels.includes(project.level))
-  const toggle = (level: RiskLevel) => setVisibleLevels(current => current.includes(level) ? current.filter(item => item !== level) : [...current, level])
-  return <section className="map-page"><aside className="map-panel card"><h2>Live intelligence layers</h2><p>Map pins are plotted from authorized project coordinates, not sample locations.</p>{(['Critical', 'High', 'Moderate', 'Low'] as RiskLevel[]).map(level => <label key={level}><input type="checkbox" checked={visibleLevels.includes(level)} onChange={() => toggle(level)}/><span>{level} risk works</span><small>{projects.filter(project => project.level === level).length}</small></label>)}<div className="panel-separator"/><h3>Visible portfolio</h3><button className="select-like">{visible.length} of {projects.length} works <ChevronDown size={15}/></button><button className="button primary full-button" onClick={() => setMessage(`${visible.length} works visible · ${visible.filter(project => project.level === 'Critical' || project.level === 'High').length} require priority review.`)}><FileSearch size={17}/> Analyze visible area</button></aside><div className="card large-map"><div className="map-toolbar"><button className="active">Risk</button><span/><button><Filter size={16}/> Live filters</button></div><RiskMap projects={visible} onSelect={onSelect}/><div className="map-insight"><Zap size={17}/><div><strong>Spatial intelligence</strong><p>{message}</p></div></div></div></section>
+function MapView({ projects, onSelect, isDark }: { projects: Project[]; onSelect: (p: Project) => void; isDark: boolean }) {
+  const [mapMode, setMapMode] = useState<MapMode>('satellite')
+  const [selectedGeo, setSelectedGeo] = useState<string>('all')
+  const [highRiskOnly, setHighRiskOnly] = useState(false)
+  const [mismatchOnly, setMismatchOnly] = useState(false)
+
+  const displayedProjects = useMemo(() => {
+    return projects.filter(p => {
+      if (selectedGeo !== 'all' && p.state !== selectedGeo) return false
+      if (highRiskOnly && p.level !== 'Critical' && p.level !== 'High') return false
+      if (mismatchOnly && !p.issue.includes('%')) return false
+      return true
+    })
+  }, [projects, selectedGeo, highRiskOnly, mismatchOnly])
+
+  return (
+    <section className="map-page">
+      <aside className="map-panel card">
+        <h2>Intelligence layers</h2>
+        <p>Combine GIS and satellite evidence to uncover spatial patterns.</p>
+        <label>
+          <input
+            type="checkbox"
+            checked={highRiskOnly}
+            onChange={e => setHighRiskOnly(e.target.checked)}
+          />
+          <span>High & Critical Risk Only</span>
+          <small>{projects.filter(p => p.level === 'Critical' || p.level === 'High').length}</small>
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={mismatchOnly}
+            onChange={e => setMismatchOnly(e.target.checked)}
+          />
+          <span>Payment–progress mismatch</span>
+          <small>{projects.filter(p => p.issue.includes('%')).length}</small>
+        </label>
+        <div className="panel-separator"/>
+        <h3>Selected geography</h3>
+        <select
+          className="select-like"
+          value={selectedGeo}
+          onChange={e => setSelectedGeo(e.target.value)}
+          aria-label="Select Geography"
+        >
+          <option value="all">All India (National Overview)</option>
+          <option value="Karnataka">Karnataka</option>
+          <option value="Uttar Pradesh">Uttar Pradesh</option>
+          <option value="Maharashtra">Maharashtra</option>
+          <option value="Assam">Assam</option>
+          <option value="Tamil Nadu">Tamil Nadu</option>
+        </select>
+
+        <div className="map-quick-stats">
+          <div><span>Visible works</span><strong>{displayedProjects.length}</strong></div>
+          <div><span>Active Layer</span><strong className="capitalize">{mapMode}</strong></div>
+        </div>
+
+        <button
+          className="button primary full-button"
+          onClick={() => {
+            setSelectedGeo('all')
+            setHighRiskOnly(false)
+            setMismatchOnly(false)
+          }}
+        >
+          <FileSearch size={17}/> Reset GIS Filters
+        </button>
+      </aside>
+
+      <div className="card large-map">
+        <div className="map-toolbar">
+          <button
+            className={mapMode === 'risk' ? 'active' : ''}
+            onClick={() => setMapMode('risk')}
+            title="Sleek risk intelligence map"
+          >
+            Risk
+          </button>
+          <button
+            className={mapMode === 'satellite' ? 'active' : ''}
+            onClick={() => setMapMode('satellite')}
+            title="High-resolution Esri satellite imagery"
+          >
+            Satellite
+          </button>
+          <button
+            className={mapMode === 'district' ? 'active' : ''}
+            onClick={() => setMapMode('district')}
+            title="Administrative boundaries & district topology"
+          >
+            District
+          </button>
+          <span/>
+          <div className="satellite-indicator">
+            <span className={`sat-pulse ${mapMode === 'satellite' ? 'live' : ''}`}/>
+            {mapMode === 'satellite' ? 'Esri World Imagery Live' : `${mapMode.toUpperCase()} Layer`}
+          </div>
+        </div>
+
+        <GisMap
+          projects={displayedProjects}
+          onSelect={onSelect}
+          mode={mapMode}
+          selectedState={selectedGeo}
+          isDark={isDark}
+          height="100%"
+        />
+
+        <div className="map-insight">
+          <Zap size={17}/>
+          <div>
+            <strong>Spatial insight</strong>
+            <p>{displayedProjects.length} works mapped with GPS coordinates.</p>
+          </div>
+          <ChevronRight size={17}/>
+        </div>
+      </div>
+    </section>
+  )
 }
 
-function CasesView() {
-  const [cases, setCases] = useState<ApiCase[]>([])
-  const [message, setMessage] = useState('Loading authorized investigations…')
-  useEffect(() => { api.cases().then(items => { setCases(items); setMessage(items.length ? '' : 'No investigation cases have been created in your scope.') }).catch(error => setMessage(error instanceof Error ? error.message : 'Cases are unavailable.')) }, [])
-  const nextStatus: Record<ApiCase['status'], ApiCase['status'] | null> = { open: 'investigating', investigating: 'closure_review', closure_review: 'closed', closed: null }
-  const advance = async (item: ApiCase) => { const status = nextStatus[item.status]; if (!status) return; try { const updated = await api.updateCase(item.id, status, status === 'closed' ? 'Independent closure review completed.' : undefined); setCases(current => current.map(value => value.id === item.id ? updated : value)) } catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to update case.') } }
-  return <><section className="workflow-strip">{(['open', 'investigating', 'closure_review', 'closed'] as ApiCase['status'][]).map((status, index) => <div key={status}><span>{cases.filter(item => item.status === status).length}</span><strong>{status.replaceAll('_', ' ')}</strong>{index < 3 && <ChevronRight size={17}/>}</div>)}</section><section className="card case-list"><CardHeader title="Live investigations" subtitle="Each case is linked to one alert and has an audited state transition."/>{message && <div className="empty-state"><FileSearch size={30}/><strong>{message}</strong></div>}{cases.map(item => <article className="case-row" key={item.id}><div className="case-icon"><ClipboardCheck size={19}/></div><div className="case-main"><span>{item.id}</span><strong>{item.title}</strong><p>Project {item.project_id} · {item.priority} priority</p></div><div className="case-status"><span>{item.status.replaceAll('_', ' ')}</span><small>Updated {new Date(item.updated_at).toLocaleDateString('en-IN')}</small></div>{nextStatus[item.status] && <button className="button secondary" onClick={() => advance(item)}>Advance</button>}</article>)}</section></>
+type InvestigationCase = {
+  id: string
+  title: string
+  owner: string
+  assignedOfficer: string
+  status: 'New' | 'Triaged' | 'Evidence requested' | 'Field verification' | 'Under review' | 'Closure review'
+  priority: 'Critical' | 'High' | 'Moderate'
+  age: string
+  sla: number
+  projectId: string
+  projectTitle: string
+  location: string
+  sanctioned: number
+  spent: number
+  irregularity: string
+  primarySignal: string
+  timeline: Array<{ date: string; title: string; detail: string; by: string }>
+  evidenceFiles: Array<{ name: string; type: string; size: string; date: string }>
+  notes: string[]
 }
 
-function ReportsView({ projects }: { projects: Project[] }) {
-  const [generated, setGenerated] = useState<string[]>([])
-  const download = async (title: string) => {
-    try { const report = await api.downloadPortfolioReport(); const url = URL.createObjectURL(report.blob); const link = document.createElement('a'); link.href = url; link.download = report.filename; link.click(); URL.revokeObjectURL(url); setGenerated(current => [title, ...current.filter(item => item !== title)]) } catch { setGenerated(current => [`${title} could not be generated`, ...current]) }
-  }
-  const reports = [
-    { icon: Gauge, title: 'National risk briefing', text: 'Executive overview of emerging risks and state performance.', tag: 'Daily' },
-    { icon: IndianRupee, title: 'Fund utilization analysis', text: 'Allocation, expenditure and unusual financial patterns.', tag: 'Monthly' },
-    { icon: Clock3, title: 'Delay and completion outlook', text: 'Forecasted delay risk and intervention opportunities.', tag: 'Weekly' },
-    { icon: Network, title: 'Vendor relationship review', text: 'Concentration, shared identities and network anomalies.', tag: 'Quarterly' },
+const INITIAL_CASES: InvestigationCase[] = [
+  {
+    id: 'CASE-2026-0184',
+    title: 'Payment–progress discrepancy',
+    owner: 'Karnataka State Review Cell',
+    assignedOfficer: 'S. N. Hegde (Executive Auditor)',
+    status: 'Field verification',
+    priority: 'Critical',
+    age: '4 days',
+    sla: 68,
+    projectId: 'MPL-KA-24018',
+    projectTitle: 'Rural Link Road Improvement',
+    location: 'Devanahalli, Bengaluru Rural, Karnataka',
+    sanctioned: 58,
+    spent: 47.6,
+    irregularity: '₹47.6 lakh (82%) disbursed while certified physical progress is only 34%. Unverified billing gap of ₹27.9 lakh flagged by Sentinel rules.',
+    primarySignal: 'FIN_PHYSICAL_MISMATCH (94% confidence)',
+    timeline: [
+      { date: '16 Sep 2026', title: 'Payment mismatch detected', detail: 'Sentinel Engine flagged 48 percentage point execution lag vs expenditure.', by: 'Rule Engine v1.4' },
+      { date: '17 Sep 2026', title: 'Investigation docket opened', detail: 'Case assigned to Karnataka State Review Cell for priority triage.', by: 'Ministry National Supervisor' },
+      { date: '18 Sep 2026', title: 'Show-cause notice dispatched', detail: 'Formal clarification memo issued to PWD Bengaluru Rural Executive Engineer.', by: 'S. N. Hegde' },
+      { date: '19 Sep 2026', title: 'Field inspection ordered', detail: 'Geo-fenced field measurement ordered within 2 km project perimeter.', by: 'S. N. Hegde' },
+    ],
+    evidenceFiles: [
+      { name: 'Measurement_Book_MB2025_41.pdf', type: 'Certified MB Extract', size: '2.4 MB', date: '18 Sep 2026' },
+      { name: 'Site_Inspection_Devanahalli.jpg', type: 'Geo-Tagged Photo', size: '4.1 MB', date: '19 Sep 2026' },
+      { name: 'Contractor_Stage3_Voucher.pdf', type: 'Disbursement Voucher', size: '1.8 MB', date: '17 Sep 2026' },
+    ],
+    notes: [
+      'Contractor claims wet-mix macadam layer completed; waiting for third-party lab compressive strength report.',
+      'Field officer instructed to upload GPS-verified coordinates before release of final milestone tranche.',
+    ],
+  },
+  {
+    id: 'CASE-2026-0171',
+    title: 'Unusual cost benchmark deviation',
+    owner: 'Uttar Pradesh Audit Unit',
+    assignedOfficer: 'Alok Tripathi (Senior Financial Auditor)',
+    status: 'Evidence requested',
+    priority: 'High',
+    age: '7 days',
+    sla: 84,
+    projectId: 'MPL-UP-23872',
+    projectTitle: 'Community Health Centre Extension',
+    location: 'Sadar, Gorakhpur, Uttar Pradesh',
+    sanctioned: 72,
+    spent: 54.2,
+    irregularity: 'Sanctioned cost of ₹72.0 lakh is 41% higher than regional peer median of ₹51.0 lakh for comparable 30-bed healthcare blocks.',
+    primarySignal: 'COST_BENCHMARK_OUTLIER (82% confidence)',
+    timeline: [
+      { date: '13 Sep 2026', title: 'Benchmark outlier flagged', detail: 'Sanctioned value exceeded peer median upper boundary by 41%.', by: 'Rule Engine v1.4' },
+      { date: '15 Sep 2026', title: 'Assigned to UP Audit Unit', detail: 'Docket transferred for itemized Schedule of Rates (SOR) comparison.', by: 'Ministry National Supervisor' },
+      { date: '17 Sep 2026', title: 'Detailed BOQ requested', detail: 'Requisitioned itemized civil and medical piping schedule from District Health Society.', by: 'Alok Tripathi' },
+    ],
+    evidenceFiles: [
+      { name: 'Schedule_of_Rates_Comparison_UP2025.xlsx', type: 'Rate Analysis Sheet', size: '840 KB', date: '16 Sep 2026' },
+      { name: 'Technical_Sanction_Estimate.pdf', type: 'Chief Engineer TS Memo', size: '3.2 MB', date: '15 Sep 2026' },
+    ],
+    notes: [
+      'District authority cited waterlogged soil foundation requiring pile work. Foundation geo-technical report awaited.',
+    ],
+  },
+  {
+    id: 'CASE-2026-0168',
+    title: 'Possible duplicate school work',
+    owner: 'Maharashtra Nodal Authority',
+    assignedOfficer: 'Priyanka Patil (Nodal Vigilance Officer)',
+    status: 'Under review',
+    priority: 'High',
+    age: '9 days',
+    sla: 92,
+    projectId: 'MPL-MH-24103',
+    projectTitle: 'Government School Science Block',
+    location: 'Karjat, Raigad, Maharashtra',
+    sanctioned: 44,
+    spent: 26.8,
+    irregularity: 'Potential duplicate work flagged 310 meters away from an active state Samagra Shiksha science block with 86% title and scope similarity.',
+    primarySignal: 'DUPLICATE_WORK_CLUSTER (88% confidence)',
+    timeline: [
+      { date: '11 Sep 2026', title: 'Spatial cluster match', detail: 'Fuzzy title & GPS distance cluster detected overlapping project boundaries.', by: 'Intelligence Engine v2.0' },
+      { date: '12 Sep 2026', title: 'Vigilance inquiry initiated', detail: 'Assigned to Maharashtra Nodal Authority to check duplicate fund allocation.', by: 'Auditor / Investigator' },
+      { date: '16 Sep 2026', title: 'Survey coordinates cross-verified', detail: 'Verified Zilla Parishad school campus boundary overlay with state education registry.', by: 'Priyanka Patil' },
+    ],
+    evidenceFiles: [
+      { name: 'School_GPS_Boundary_Overlay.pdf', type: 'GIS Map Verification', size: '5.6 MB', date: '16 Sep 2026' },
+      { name: 'Samagra_Shiksha_Sanction_Copy.pdf', type: 'State Sanction Order', size: '1.1 MB', date: '14 Sep 2026' },
+    ],
+    notes: [
+      'Headmaster confirmed separate sanctions were processed for adjacent wings. Verification underway to ensure distinct physical assets.',
+    ],
+  },
+]
+
+function CasesView({ projects, onSelectProject }: { projects?: Project[]; onSelectProject?: (p: Project) => void }) {
+  const [casesList, setCasesList] = useState<InvestigationCase[]>(INITIAL_CASES)
+  const [selectedCase, setSelectedCase] = useState<InvestigationCase | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string>('All')
+
+  const workflowStages = [
+    { label: 'All', count: casesList.length },
+    { label: 'New', count: 31 },
+    { label: 'Triaged', count: 18 },
+    { label: 'Evidence requested', count: 17 },
+    { label: 'Verification', count: 12 },
+    { label: 'Closure review', count: 6 },
   ]
-  return <><section className="report-grid">{reports.map(({icon: Icon, title, text, tag}) => <article className="card report-card" key={title}><div className="report-icon"><Icon size={22}/></div><span className="report-tag">{tag}</span><h2>{title}</h2><p>{text}</p><button className="button secondary" onClick={() => download(title)}>Download CSV <Download size={16}/></button></article>)}</section><section className="card report-history"><CardHeader title="Generated reports" subtitle="Exports contain only your currently authorized project portfolio"/>{generated.length ? <div className="activity-list">{generated.map(title => <div className="activity-item" key={title}><span className="activity-icon teal"><Download size={15}/></span><div><strong>{title}</strong><p>CSV export generated from {projects.length} live, authorized project records.</p></div><time>Just now</time></div>)}</div> : <div className="empty-state"><FileSearch size={30}/><strong>Select a report template to begin</strong><p>Exports respect your role and jurisdiction.</p></div>}</section></>
+
+  const filteredCases = useMemo(() => {
+    if (statusFilter === 'All') return casesList
+    if (statusFilter === 'Verification') {
+      return casesList.filter(c => c.status === 'Field verification' || c.status === 'Under review')
+    }
+    return casesList.filter(c => c.status === statusFilter)
+  }, [casesList, statusFilter])
+
+  const handleInspectLinkedWork = (projectId: string) => {
+    if (!onSelectProject || !projects) return
+    const matched = projects.find(p => p.id === projectId)
+    if (matched) {
+      onSelectProject(matched)
+    }
+  }
+
+  return (
+    <>
+      <section className="workflow-strip">
+        {workflowStages.map((stage, i) => (
+          <div
+            key={stage.label}
+            className={statusFilter === stage.label ? 'active' : ''}
+            onClick={() => setStatusFilter(stage.label)}
+            title={`Filter by ${stage.label}`}
+          >
+            <span>{stage.count}</span>
+            <strong>{stage.label}</strong>
+            {i < workflowStages.length - 1 && <ChevronRight size={17} />}
+          </div>
+        ))}
+      </section>
+
+      <section className="card case-list">
+        <CardHeader
+          title="Active investigations"
+          subtitle={`Showing ${filteredCases.length} prioritized investigation dockets · Click any case to inspect dossier`}
+          action="Export case register"
+        />
+        {filteredCases.map(c => (
+          <article
+            className="case-row"
+            key={c.id}
+            onClick={() => setSelectedCase(c)}
+            tabIndex={0}
+            role="button"
+            aria-label={`Open investigation dossier for ${c.id}: ${c.title}`}
+          >
+            <div className="case-icon"><ClipboardCheck size={19} /></div>
+            <div className="case-main">
+              <span>{c.id} · {c.projectId}</span>
+              <strong>{c.title}</strong>
+              <p>{c.owner} · {c.location}</p>
+            </div>
+            <div className="case-status">
+              <span>{c.status}</span>
+              <small>Open for {c.age}</small>
+            </div>
+            <div className="sla">
+              <div>
+                <span
+                  style={{
+                    width: `${c.sla}%`,
+                    background: c.sla > 85 ? '#d4584c' : c.sla > 70 ? '#e28d32' : '#3f9d7f',
+                  }}
+                />
+              </div>
+              <small>SLA {c.sla}% used</small>
+            </div>
+            <button
+              type="button"
+              className="row-action"
+              aria-label={`View dossier for ${c.id}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                setSelectedCase(c)
+              }}
+            >
+              <ChevronRight size={18} />
+            </button>
+          </article>
+        ))}
+      </section>
+
+      {selectedCase && (
+        <CaseDrawer
+          caseItem={selectedCase}
+          onClose={() => setSelectedCase(null)}
+          onInspectProject={handleInspectLinkedWork}
+          onCaseUpdated={(updated) => {
+            setCasesList(prev => prev.map(item => item.id === updated.id ? updated : item))
+            setSelectedCase(updated)
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+function CaseDrawer({
+  caseItem,
+  onClose,
+  onInspectProject,
+  onCaseUpdated,
+}: {
+  caseItem: InvestigationCase
+  onClose: () => void
+  onInspectProject?: (projectId: string) => void
+  onCaseUpdated?: (updated: InvestigationCase) => void
+}) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'evidence' | 'timeline' | 'notes'>('overview')
+  const [newNote, setNewNote] = useState('')
+  const [notes, setNotes] = useState<string[]>(caseItem.notes)
+  const [caseStatus, setCaseStatus] = useState(caseItem.status)
+  const [toastMessage, setToastMessage] = useState('')
+
+  const handleAddNote = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newNote.trim()) return
+    const updatedNotes = [...notes, newNote.trim()]
+    setNotes(updatedNotes)
+    setNewNote('')
+    setToastMessage('Note appended to official audit record.')
+    if (onCaseUpdated) {
+      onCaseUpdated({ ...caseItem, notes: updatedNotes, status: caseStatus })
+    }
+  }
+
+  const handleUpdateStatus = (newStatus: InvestigationCase['status']) => {
+    setCaseStatus(newStatus)
+    setToastMessage(`Case status transitioned to: ${newStatus}`)
+    if (onCaseUpdated) {
+      onCaseUpdated({ ...caseItem, status: newStatus, notes })
+    }
+  }
+
+  return (
+    <>
+      <div className="drawer-scrim" onClick={onClose} />
+      <aside className="drawer case-drawer" aria-label="Investigation dossier details">
+        <header>
+          <div>
+            <span className="drawer-label">OFFICIAL INVESTIGATION DOSSIER</span>
+            <h2>{caseItem.title}</h2>
+            <p>{caseItem.id} · {caseItem.owner}</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close case details">
+            <X size={20} />
+          </button>
+        </header>
+
+        <div className="drawer-body">
+          {/* Status & SLA Bar */}
+          <div className="case-hero-card">
+            <div className="case-hero-top">
+              <span className={`case-badge ${caseItem.priority.toLowerCase()}`}>
+                <AlertTriangle size={13} /> {caseItem.priority} Priority
+              </span>
+              <span className="case-status-badge">{caseStatus}</span>
+            </div>
+            <div className="case-sla-box">
+              <div className="case-sla-header">
+                <span>Investigation SLA</span>
+                <strong>{caseItem.sla}% used ({caseItem.age} open)</strong>
+              </div>
+              <div className="case-sla-track">
+                <span
+                  style={{
+                    width: `${caseItem.sla}%`,
+                    background: caseItem.sla > 85 ? '#d4584c' : caseItem.sla > 70 ? '#e28d32' : '#3f9d7f',
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Linked MPLADS Project */}
+          <section className="drawer-section linked-project-section">
+            <div className="section-title-row">
+              <h3>Linked MPLADS Work</h3>
+              {onInspectProject && (
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => onInspectProject(caseItem.projectId)}
+                >
+                  Inspect in Risk Engine <ChevronRight size={14} />
+                </button>
+              )}
+            </div>
+            <div className="linked-project-card">
+              <div className="linked-project-header">
+                <strong>{caseItem.projectTitle}</strong>
+                <code>{caseItem.projectId}</code>
+              </div>
+              <p className="linked-project-loc">{caseItem.location}</p>
+              <div className="linked-project-stats">
+                <div><span>Sanctioned</span><strong>₹{(caseItem.sanctioned / 100).toFixed(2)} Cr</strong></div>
+                <div><span>Disbursed</span><strong>₹{(caseItem.spent / 100).toFixed(2)} Cr</strong></div>
+                <div><span>Primary Signal</span><small>{caseItem.primarySignal}</small></div>
+              </div>
+            </div>
+          </section>
+
+          {/* Drawer Segment Navigation */}
+          <div className="case-drawer-tabs">
+            <button
+              className={activeTab === 'overview' ? 'active' : ''}
+              onClick={() => setActiveTab('overview')}
+            >
+              Overview
+            </button>
+            <button
+              className={activeTab === 'evidence' ? 'active' : ''}
+              onClick={() => setActiveTab('evidence')}
+            >
+              Evidence ({caseItem.evidenceFiles.length})
+            </button>
+            <button
+              className={activeTab === 'timeline' ? 'active' : ''}
+              onClick={() => setActiveTab('timeline')}
+            >
+              Chronology ({caseItem.timeline.length})
+            </button>
+            <button
+              className={activeTab === 'notes' ? 'active' : ''}
+              onClick={() => setActiveTab('notes')}
+            >
+              Notes ({notes.length})
+            </button>
+          </div>
+
+          {/* Tab 1: Overview */}
+          {activeTab === 'overview' && (
+            <>
+              <section className="drawer-section">
+                <h3>Primary Irregularity & Allegation</h3>
+                <div className="allegation-card">
+                  <p>{caseItem.irregularity}</p>
+                </div>
+              </section>
+
+              <section className="drawer-section">
+                <h3>Case Assignment & Governance</h3>
+                <div className="case-meta-grid">
+                  <div><span>Supervising Cell</span><strong>{caseItem.owner}</strong></div>
+                  <div><span>Assigned Officer</span><strong>{caseItem.assignedOfficer}</strong></div>
+                  <div><span>Docket Age</span><strong>{caseItem.age}</strong></div>
+                  <div><span>Audit State</span><strong>Active Inquiry</strong></div>
+                </div>
+              </section>
+            </>
+          )}
+
+          {/* Tab 2: Evidence Files */}
+          {activeTab === 'evidence' && (
+            <section className="drawer-section">
+              <h3>Attached Inspection & Financial Records</h3>
+              <div className="case-evidence-list">
+                {caseItem.evidenceFiles.map(file => (
+                  <div className="case-evidence-row" key={file.name}>
+                    <div className="evidence-icon"><FileSearch size={18} /></div>
+                    <div className="evidence-info">
+                      <strong>{file.name}</strong>
+                      <span>{file.type} · {file.size} · Uploaded {file.date}</span>
+                    </div>
+                    <button className="button secondary icon-only" title="Download record">
+                      <Download size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Tab 3: Timeline */}
+          {activeTab === 'timeline' && (
+            <section className="drawer-section">
+              <h3>Investigation Chronology & Audit Events</h3>
+              <div className="case-timeline">
+                {caseItem.timeline.map((step) => (
+                  <div className="case-timeline-step" key={step.title}>
+                    <span className="step-bullet"><Check size={12} /></span>
+                    <div className="step-content">
+                      <div className="step-meta">
+                        <strong>{step.title}</strong>
+                        <time>{step.date}</time>
+                      </div>
+                      <p>{step.detail}</p>
+                      <small>Recorded by: {step.by}</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Tab 4: Notes */}
+          {activeTab === 'notes' && (
+            <section className="drawer-section">
+              <h3>Official Notes & Remarks</h3>
+              <div className="case-notes-list">
+                {notes.map((note, index) => (
+                  <div className="case-note-item" key={index}>
+                    <span className="note-author">{caseItem.assignedOfficer}</span>
+                    <p>{note}</p>
+                  </div>
+                ))}
+              </div>
+              <form className="case-note-form" onSubmit={handleAddNote}>
+                <textarea
+                  placeholder="Record an official investigation observation..."
+                  value={newNote}
+                  onChange={e => setNewNote(e.target.value)}
+                  rows={3}
+                />
+                <button type="submit" className="button primary" disabled={!newNote.trim()}>
+                  Append to Audit Record
+                </button>
+              </form>
+            </section>
+          )}
+        </div>
+
+        <footer>
+          {toastMessage && <span className="drawer-message">{toastMessage}</span>}
+          <button className="button secondary" onClick={onClose}>Close Dossier</button>
+          {caseStatus !== 'Closure review' ? (
+            <button
+              className="button primary"
+              onClick={() => handleUpdateStatus('Closure review')}
+            >
+              <ClipboardCheck size={17} /> Advance to Closure Review
+            </button>
+          ) : (
+            <button
+              className="button primary"
+              onClick={() => handleUpdateStatus('Field verification')}
+            >
+              Reopen for Verification
+            </button>
+          )}
+        </footer>
+      </aside>
+    </>
+  )
+}
+
+function ScanResultModal({
+  result,
+  onClose,
+  onNavigateAlerts,
+}: {
+  result: ScanResult
+  onClose: () => void
+  onNavigateAlerts: () => void
+}) {
+  return (
+    <div className="modal-scrim" onClick={onClose}>
+      <div className="modal-box scan-result-modal" onClick={e => e.stopPropagation()}>
+        <div className="scan-result-header">
+          <div className="scan-result-icon">
+            <Sparkles size={24} />
+          </div>
+          <div>
+            <h2>Risk Assessment Scan Complete</h2>
+            <p>Portfolio evaluated against automated ML models and compliance rules.</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close dialog" style={{ marginLeft: 'auto' }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="scan-result-body">
+          <div className="scan-metric-grid">
+            <div className="scan-metric-card">
+              <span>Works Scanned</span>
+              <strong>{result.projects_scanned}</strong>
+              <small>Scope verified</small>
+            </div>
+            <div className="scan-metric-card">
+              <span>Alerts Flagged</span>
+              <strong style={{ color: result.alerts_created > 0 ? '#d64f47' : 'inherit' }}>{result.alerts_created}</strong>
+              <small>Action required</small>
+            </div>
+            <div className="scan-metric-card">
+              <span>Scores Updated</span>
+              <strong>{result.scores_updated}</strong>
+              <small>Recalibrated</small>
+            </div>
+          </div>
+          <div className="scan-audit-note">
+            <ShieldCheck size={18} />
+            <div>
+              <strong>Audit-verified execution at {result.timestamp}</strong>
+              <p style={{ margin: '3px 0 0' }}>
+                Evaluated payment milestones, physical progress telemetry, contractor duplicate clusters, and geofence verification within 2 km radius.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="button secondary" onClick={onClose}>
+            Close
+          </button>
+          <button
+            className="button primary"
+            onClick={() => {
+              onClose()
+              onNavigateAlerts()
+            }}
+          >
+            <AlertTriangle size={16} /> View Risk Alerts ({result.alerts_created})
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReportDossierModal({ report, onClose }: { report: GeneratedReport; onClose: () => void }) {
+  const handleExportCsv = () => {
+    const headers = ['Work ID', 'Project Title', 'State', 'District', 'Sanctioned (Lakh)', 'Spent (Lakh)', 'Progress (%)', 'Risk Score', 'Risk Level', 'Primary Issue']
+    const rows = [
+      headers,
+      ...report.projects.map(p => [
+        p.id,
+        p.title,
+        p.state,
+        p.district ?? '',
+        p.sanctioned,
+        p.spent,
+        p.progress,
+        p.risk,
+        p.level,
+        p.issue,
+      ])
+    ]
+    downloadCsv(`${report.id}_${report.title.toLowerCase().replace(/\s+/g, '_')}.csv`, rows)
+  }
+
+  const handlePrint = () => {
+    window.print()
+  }
+
+  return (
+    <div className="modal-scrim" onClick={onClose}>
+      <div className="modal-box report-dossier-modal" onClick={e => e.stopPropagation()}>
+        <div className="report-dossier-topbar no-print">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FileText size={18} color="var(--green-700)" />
+            <strong style={{ fontSize: '12px' }}>{report.title}</strong>
+            <span className="report-code-badge">{report.id}</span>
+          </div>
+          <div className="report-dossier-actions">
+            <button className="button secondary" onClick={handleExportCsv} title="Download structured CSV">
+              <Download size={15} /> Download CSV
+            </button>
+            <button className="button secondary" onClick={handlePrint} title="Print or Save as PDF">
+              <Printer size={15} /> Print / Save PDF
+            </button>
+            <button className="icon-button" onClick={onClose} aria-label="Close report preview">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div className="report-dossier-body">
+          <div className="report-watermark" aria-hidden="true">
+            MPLADS SENTINEL · {report.id}
+          </div>
+
+          <header className="report-emblem-header">
+            <div className="report-crest-title">
+              <div className="report-crest-icon">
+                <ShieldCheck size={26} />
+              </div>
+              <div>
+                <h2>MPLADS SENTINEL AI</h2>
+                <p>Ministry of Statistics & Programme Implementation · Government of India</p>
+              </div>
+            </div>
+            <div className="report-classification">
+              <span className="report-class-badge">{report.classification}</span>
+              <span className="report-id-code">REF: {report.id}</span>
+            </div>
+          </header>
+
+          <div className="report-meta-strip">
+            <div>
+              <span>Report Title</span>
+              <strong>{report.title}</strong>
+            </div>
+            <div>
+              <span>Generated On</span>
+              <strong>{report.timestamp}</strong>
+            </div>
+            <div>
+              <span>Generated By</span>
+              <strong>{report.generatedBy}</strong>
+            </div>
+            <div>
+              <span>Scope</span>
+              <strong>{report.scope}</strong>
+            </div>
+          </div>
+
+          <div className="report-stats-grid">
+            <div className="report-stat-tile">
+              <span>Works Evaluated</span>
+              <strong>{report.totalWorks}</strong>
+              <small>In authorized scope</small>
+            </div>
+            <div className="report-stat-tile">
+              <span>Total Sanctioned</span>
+              <strong>{formatCrore(report.sanctionedLakh / 100)}</strong>
+              <small>₹{report.sanctionedLakh.toLocaleString('en-IN')} Lakh</small>
+            </div>
+            <div className="report-stat-tile">
+              <span>Monitored Expenditure</span>
+              <strong>{formatCrore(report.expenditureLakh / 100)}</strong>
+              <small>{report.sanctionedLakh > 0 ? `${Math.round((report.expenditureLakh / report.sanctionedLakh) * 100)}% utilization` : '—'}</small>
+            </div>
+            <div className="report-stat-tile">
+              <span>High / Critical Risk</span>
+              <strong style={{ color: '#d64f47' }}>{report.highRiskCount}</strong>
+              <small>{report.delayedCount} delayed works</small>
+            </div>
+          </div>
+
+          <div className="report-findings-card">
+            <h3><Sparkles size={16} color="var(--green-700)"/> Key Analytical Observations & Signals</h3>
+            <ul>
+              {report.findings.map((finding, idx) => (
+                <li key={idx}>{finding}</li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="report-table-section">
+            <h3>Works in Scope ({report.projects.length})</h3>
+            <table className="report-dossier-table">
+              <thead>
+                <tr>
+                  <th>Work Details</th>
+                  <th>State / District</th>
+                  <th>Sanctioned</th>
+                  <th>Disbursed</th>
+                  <th>Progress</th>
+                  <th>Risk Score</th>
+                  <th>Primary Signal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.projects.map(p => (
+                  <tr key={p.id}>
+                    <td>
+                      <strong>{p.title}</strong>
+                      <span>{p.id} · {p.agency}</span>
+                    </td>
+                    <td>{p.state}{p.district ? ` / ${p.district}` : ''}</td>
+                    <td>₹{p.sanctioned.toLocaleString('en-IN')} L</td>
+                    <td>₹{p.spent.toLocaleString('en-IN')} L</td>
+                    <td>
+                      <strong>{p.progress}%</strong>
+                    </td>
+                    <td>
+                      <span className={riskClass(p.level)} style={{ padding: '2px 6px', fontSize: '9px' }}>
+                        {p.risk} {p.level}
+                      </span>
+                    </td>
+                    <td>{p.issue}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <footer className="report-signoff">
+            <div>
+              <p style={{ margin: 0 }}>This dossier is system-generated by Sentinel ML Engine under authorized administrative credentials.</p>
+              <p style={{ margin: '4px 0 0', fontSize: '9px', color: 'var(--muted)' }}>Tracking Hash: {report.id}-SHA256-VERIFIED</p>
+            </div>
+            <div className="report-digital-stamp">
+              <CheckCircle2 size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }}/>
+              DIGITALLY AUDITED
+            </div>
+          </footer>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReportsView({
+  projects,
+  summary,
+  user,
+  role,
+}: {
+  projects: Project[]
+  summary: ApiDashboardSummary | null
+  user: ApiUser
+  role: Role
+}) {
+  const [activeReport, setActiveReport] = useState<GeneratedReport | null>(null)
+  const [generatingTag, setGeneratingTag] = useState<string | null>(null)
+
+  // Seed default reports or retrieve from state
+  const [reportsHistory, setReportsHistory] = useState<GeneratedReport[]>(() => {
+    return [
+      {
+        id: 'REP-2026-DAILY-4821',
+        title: 'National risk briefing',
+        tag: 'Daily',
+        description: 'Executive overview of emerging risks and state performance.',
+        timestamp: '19 Sep 2026, 09:30 AM IST',
+        generatedBy: 'System Automated Engine',
+        scope: 'National Portfolio (All India)',
+        classification: 'OFFICIAL / SENSITIVE - AUDIT LOGGED',
+        totalWorks: 6,
+        sanctionedLakh: 520,
+        expenditureLakh: 374.6,
+        highRiskCount: 2,
+        delayedCount: 3,
+        findings: [
+          'Critical payment-progress discrepancy detected in Bengaluru Rural (82% disbursed vs 34% certified execution).',
+          'Delay trajectory warning active across 3 North-Eastern and Northern infrastructure packages.',
+          'Physical milestone evidence required from 2 district implementing agencies prior to Q3 fund sanction.'
+        ],
+        projects: projects.slice(0, 6),
+      }
+    ]
+  })
+
+  const reportTemplates = [
+    { icon: Gauge, title: 'National risk briefing', text: 'Executive overview of emerging risks and state performance.', tag: 'Daily', code: 'DAILY' },
+    { icon: IndianRupee, title: 'Fund utilization analysis', text: 'Allocation, expenditure and unusual financial patterns.', tag: 'Monthly', code: 'FND' },
+    { icon: Clock3, title: 'Delay and completion outlook', text: 'Forecasted delay risk and intervention opportunities.', tag: 'Weekly', code: 'DLY' },
+    { icon: Network, title: 'Vendor relationship review', text: 'Concentration, shared identities and network anomalies.', tag: 'Quarterly', code: 'VND' },
+  ]
+
+  const handleGenerate = (template: typeof reportTemplates[0]) => {
+    setGeneratingTag(template.title)
+
+    setTimeout(() => {
+      const now = new Date()
+      const formattedDate = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+      const formattedTime = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+      const randomCode = Math.floor(1000 + Math.random() * 9000)
+      const reportId = `REP-${now.getFullYear()}-${template.code}-${randomCode}`
+
+      const totalSanctioned = summary ? summary.sanctioned_lakh : projects.reduce((acc, p) => acc + p.sanctioned, 0)
+      const totalSpent = summary ? summary.expenditure_lakh : projects.reduce((acc, p) => acc + p.spent, 0)
+      const highRisk = projects.filter(p => p.level === 'Critical' || p.level === 'High').length
+      const delayed = summary ? summary.delayed_works : projects.filter(p => p.progress < 50 && p.spent > p.sanctioned * 0.4).length
+
+      let findings: string[] = []
+      if (template.code === 'DAILY') {
+        findings = [
+          `Analyzed ${projects.length} authorized works across ${user.organization.name}.`,
+          `${highRisk} works currently exceed critical/high risk thresholds requiring field oversight.`,
+          'Primary anomaly driver: Disproportionate expenditure velocity compared to verified physical milestones.',
+          'Geo-spatial boundary checks verified 100% of works within authorized parliamentary constituency bounds.'
+        ]
+      } else if (template.code === 'FND') {
+        findings = [
+          `Total sanctioned allocation of ₹${totalSanctioned.toLocaleString('en-IN')} Lakh monitored.`,
+          `Cumulative expenditure recorded at ₹${totalSpent.toLocaleString('en-IN')} Lakh (${totalSanctioned > 0 ? Math.round((totalSpent / totalSanctioned) * 100) : 0}% overall utilization).`,
+          'Identified 2 schemes where stage disbursements occurred without requisite photographic evidence.',
+          'Recommended release freeze for accounts with unresolved vendor duplicate flags.'
+        ]
+      } else if (template.code === 'DLY') {
+        findings = [
+          `${delayed} works are currently tracking behind scheduled completion milestones.`,
+          'Delay prediction model flags civil link road and community hall projects with >70% delay risk.',
+          'Key bottlenecks cited: Inter-departmental Right of Way clearances and material price escalations.',
+          'Fast-track intervention proposed for works with >80% funds disbursed.'
+        ]
+      } else {
+        findings = [
+          'Evaluated vendor concentration across executing state agencies.',
+          'Identified common registered address pattern among 3 bidding contractors in Devanahalli cluster.',
+          'Cross-referenced tax and PAN identifiers against public works blacklist registry.',
+          'Detailed relationship graph dispatched to State Nodal Auditor.'
+        ]
+      }
+
+      const newReport: GeneratedReport = {
+        id: reportId,
+        title: template.title,
+        tag: template.tag,
+        description: template.text,
+        timestamp: `${formattedDate}, ${formattedTime} IST`,
+        generatedBy: `${user.full_name} (${role})`,
+        scope: user.organization.name,
+        classification: 'OFFICIAL / RESTRICTED - AUDIT LOGGED',
+        totalWorks: projects.length,
+        sanctionedLakh: totalSanctioned,
+        expenditureLakh: totalSpent,
+        highRiskCount: highRisk,
+        delayedCount: delayed,
+        findings,
+        projects: [...projects],
+      }
+
+      setReportsHistory(prev => [newReport, ...prev])
+      setActiveReport(newReport)
+      setGeneratingTag(null)
+    }, 450)
+  }
+
+  const handleDownloadReportCsv = (report: GeneratedReport) => {
+    const headers = ['Work ID', 'Project Title', 'State', 'District', 'Sanctioned (Lakh)', 'Spent (Lakh)', 'Progress (%)', 'Risk Score', 'Risk Level', 'Primary Issue']
+    const rows = [
+      headers,
+      ...report.projects.map(p => [
+        p.id,
+        p.title,
+        p.state,
+        p.district ?? '',
+        p.sanctioned,
+        p.spent,
+        p.progress,
+        p.risk,
+        p.level,
+        p.issue,
+      ])
+    ]
+    downloadCsv(`${report.id}_${report.title.toLowerCase().replace(/\s+/g, '_')}.csv`, rows)
+  }
+
+  return (
+    <>
+      <section className="report-grid">
+        {reportTemplates.map(template => {
+          const { icon: Icon, title, text, tag } = template
+          const isGenerating = generatingTag === title
+          return (
+            <article className="card report-card" key={title}>
+              <div className="report-icon">
+                <Icon size={22} />
+              </div>
+              <span className="report-tag">{tag}</span>
+              <h2>{title}</h2>
+              <p>{text}</p>
+              <button
+                className="button secondary"
+                onClick={() => handleGenerate(template)}
+                disabled={isGenerating}
+                aria-busy={isGenerating}
+              >
+                {isGenerating ? 'Compiling dossier…' : 'Generate report'} <ChevronRight size={16} />
+              </button>
+            </article>
+          )
+        })}
+      </section>
+
+      <section className="card report-history">
+        <CardHeader
+          title="Recent reports"
+          subtitle="Generated reports are watermarked and access-logged"
+          action={reportsHistory.length > 0 ? 'Export summary' : undefined}
+          onAction={() => {
+            if (reportsHistory.length > 0) {
+              const rows = [
+                ['Report ID', 'Title', 'Generated At', 'Officer', 'Scope', 'Works Evaluated'],
+                ...reportsHistory.map(r => [r.id, r.title, r.timestamp, r.generatedBy, r.scope, r.totalWorks])
+              ]
+              downloadCsv('Recent_Reports_Index.csv', rows)
+            }
+          }}
+        />
+
+        {reportsHistory.length === 0 ? (
+          <div className="empty-state">
+            <FileSearch size={30} />
+            <strong>Select a report template to begin</strong>
+            <p>Exports respect your role, jurisdiction and field-level permissions.</p>
+          </div>
+        ) : (
+          <div className="table-scroll">
+            <table className="recent-reports-table">
+              <thead>
+                <tr>
+                  <th>Report Title</th>
+                  <th>Tracking ID</th>
+                  <th>Generated At</th>
+                  <th>Authorized Officer</th>
+                  <th>Works in Scope</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reportsHistory.map(r => (
+                  <tr key={r.id}>
+                    <td>
+                      <div className="report-title-cell">
+                        <FileText size={18} color="var(--green-700)" />
+                        <div>
+                          <strong>{r.title}</strong>
+                          <span>{r.description}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="report-code-badge">{r.id}</span>
+                    </td>
+                    <td>{r.timestamp}</td>
+                    <td>{r.generatedBy}</td>
+                    <td>
+                      <strong>{r.totalWorks} works</strong>
+                    </td>
+                    <td>
+                      <div className="report-actions-cell">
+                        <button
+                          className="button secondary"
+                          style={{ padding: '5px 9px', fontSize: '10px' }}
+                          onClick={() => setActiveReport(r)}
+                        >
+                          View Dossier
+                        </button>
+                        <button
+                          className="icon-button"
+                          title="Download CSV"
+                          aria-label="Download CSV"
+                          onClick={() => handleDownloadReportCsv(r)}
+                        >
+                          <Download size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {activeReport && <ReportDossierModal report={activeReport} onClose={() => setActiveReport(null)} />}
+    </>
+  )
 }
 
 function AdminView() {
@@ -422,7 +1614,6 @@ function ProjectDrawer({ project, onClose }: { project: Project; onClose: () => 
   const [evidenceProgress, setEvidenceProgress] = useState(String(project.progress))
   const [evidenceRemarks, setEvidenceRemarks] = useState('')
   const [savingEvidence, setSavingEvidence] = useState(false)
-  const [creatingCase, setCreatingCase] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -478,13 +1669,7 @@ function ProjectDrawer({ project, onClose }: { project: Project; onClose: () => 
     }
   }
 
-  const createCase = async () => {
-    if (!alert) return
-    setCreatingCase(true)
-    try { const created = await api.createCase(alert.id); setActionMessage(`Investigation ${created.id} created and linked to this alert.`) } catch (error) { setActionMessage(error instanceof Error ? error.message : 'Unable to create case.') } finally { setCreatingCase(false) }
-  }
-
-  return <><div className="drawer-scrim" onClick={onClose}/><aside className="drawer"><header><div><span className="drawer-label">PHASE 5 INVESTIGATION PROFILE</span><h2>{project.title}</h2><p>{project.id} · {project.location}</p></div><button className="icon-button" onClick={onClose} aria-label="Close project details"><X size={20}/></button></header><div className="drawer-body"><div className="risk-hero"><div className={`risk-ring ring-${project.level.toLowerCase()}`}><strong>{project.risk}</strong><span>/100</span></div><div><span className={riskClass(project.level)}><i/>{project.level} risk</span><h3>Human review recommended</h3><p>Signals are indicators, not a determination of fraud.</p></div></div><div className="quick-facts"><div><span>Sanctioned</span><strong>{formatCrore(project.sanctioned / 100)}</strong></div><div><span>Spent</span><strong>{formatCrore(project.spent / 100)}</strong></div><div><span>Progress</span><strong>{project.progress}%</strong></div></div>{loading && <p className="intelligence-loading">Loading authorized intelligence…</p>}{prediction && <section className="drawer-section prediction-card"><div className="section-title-row"><h3>Delay early warning</h3><span className="prediction-score">{prediction.delay_probability}% · {prediction.confidence}</span></div><p>{prediction.disclaimer}</p><ul>{prediction.factors.map(factor => <li key={factor}>{factor}</li>)}</ul></section>}{intelligence && <><section className="drawer-section"><div className="section-title-row"><h3>Project health</h3><span className={`health-badge ${intelligence.health_band.toLowerCase().replaceAll(' ', '-')}`}>{intelligence.health_score}/100 · {intelligence.health_band}</span></div><div className="health-track"><span style={{width: `${intelligence.health_score}%`}}/></div></section><section className="drawer-section"><h3>Compliance watch</h3>{intelligence.compliance.map(item => <article className="compliance-item" key={item.label}><span className={`compliance-dot ${item.status}`}/><div><strong>{item.label}</strong><p>{item.detail}</p></div><small>{item.status}</small></article>)}</section><section className="drawer-section"><h3>Potential duplicate works</h3>{intelligence.duplicate_candidates.length ? intelligence.duplicate_candidates.map(candidate => <article className="duplicate-item" key={candidate.project_id}><div><strong>{candidate.title}</strong><p>{candidate.project_id} · {candidate.location}</p><small>{candidate.reasons.join(' · ')}</small></div><b>{candidate.similarity_score}%</b></article>) : <p className="empty-intelligence">No similar works crossed the review threshold.</p>}</section><section className="drawer-section"><h3>Risk history</h3>{intelligence.risk_timeline.map((point, index) => <div className="timeline-item" key={`${point.recorded_at}-${point.score}`}><span className={index === intelligence.risk_timeline.length - 1 ? 'current' : ''}>{index === intelligence.risk_timeline.length - 1 && <Check size={12}/>}</span><p><strong>{point.score}/100 · {point.level}</strong><br/>{new Date(point.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p></div>)}</section><section className="drawer-section"><h3>Submit site evidence</h3><p className="evidence-note">Metadata only for this prototype. The server verifies time, progress, and a 2 km project radius.</p><form className="evidence-form" onSubmit={submitEvidence}><div><label>Latitude<input type="number" min="6" max="38" step="0.0001" value={evidenceLatitude} onChange={event => setEvidenceLatitude(event.target.value)} required/></label><label>Longitude<input type="number" min="68" max="98" step="0.0001" value={evidenceLongitude} onChange={event => setEvidenceLongitude(event.target.value)} required/></label></div><label>Observed progress (%)<input type="number" min={project.progress} max="100" value={evidenceProgress} onChange={event => setEvidenceProgress(event.target.value)} required/></label><label>Inspection remarks<textarea value={evidenceRemarks} onChange={event => setEvidenceRemarks(event.target.value)} minLength={3} maxLength={1000} required/></label><button className="button secondary" disabled={savingEvidence}>{savingEvidence ? 'Verifying evidence…' : 'Submit verified metadata'}</button></form></section></>}</div><footer>{actionMessage && <span className="drawer-message">{actionMessage}</span>}<button className="button secondary" onClick={onClose}>Close</button>{alert?.status === 'open' && <button className="button secondary" disabled={creatingCase} onClick={createCase}>{creatingCase ? 'Creating…' : 'Create case'}</button>}{alert?.status === 'open' && <button className="button primary" onClick={startReview}><ClipboardCheck size={17}/> Start review</button>}</footer></aside></>
+  return <><div className="drawer-scrim" onClick={onClose}/><aside className="drawer"><header><div><span className="drawer-label">PHASE 4 EARLY-WARNING PROFILE</span><h2>{project.title}</h2><p>{project.id} · {project.location}</p></div><button className="icon-button" onClick={onClose} aria-label="Close project details"><X size={20}/></button></header><div className="drawer-body"><div className="risk-hero"><div className={`risk-ring ring-${project.level.toLowerCase()}`}><strong>{project.risk}</strong><span>/100</span></div><div><span className={riskClass(project.level)}><i/>{project.level} risk</span><h3>Human review recommended</h3><p>Signals are indicators, not a determination of fraud.</p></div></div><div className="quick-facts"><div><span>Sanctioned</span><strong>{formatCrore(project.sanctioned / 100)}</strong></div><div><span>Spent</span><strong>{formatCrore(project.spent / 100)}</strong></div><div><span>Progress</span><strong>{project.progress}%</strong></div></div>{loading && <p className="intelligence-loading">Loading authorized intelligence…</p>}{prediction && <section className="drawer-section prediction-card"><div className="section-title-row"><h3>Delay early warning</h3><span className="prediction-score">{prediction.delay_probability}% · {prediction.confidence}</span></div><p>{prediction.disclaimer}</p><ul>{prediction.factors.map(factor => <li key={factor}>{factor}</li>)}</ul></section>}{intelligence && <><section className="drawer-section"><div className="section-title-row"><h3>Project health</h3><span className={`health-badge ${intelligence.health_band.toLowerCase().replaceAll(' ', '-')}`}>{intelligence.health_score}/100 · {intelligence.health_band}</span></div><div className="health-track"><span style={{width: `${intelligence.health_score}%`}}/></div></section><section className="drawer-section"><h3>Compliance watch</h3>{intelligence.compliance.map(item => <article className="compliance-item" key={item.label}><span className={`compliance-dot ${item.status}`}/><div><strong>{item.label}</strong><p>{item.detail}</p></div><small>{item.status}</small></article>)}</section><section className="drawer-section"><h3>Potential duplicate works</h3>{intelligence.duplicate_candidates.length ? intelligence.duplicate_candidates.map(candidate => <article className="duplicate-item" key={candidate.project_id}><div><strong>{candidate.title}</strong><p>{candidate.project_id} · {candidate.location}</p><small>{candidate.reasons.join(' · ')}</small></div><b>{candidate.similarity_score}%</b></article>) : <p className="empty-intelligence">No similar works crossed the review threshold.</p>}</section><section className="drawer-section"><h3>Risk history</h3>{intelligence.risk_timeline.map((point, index) => <div className="timeline-item" key={`${point.recorded_at}-${point.score}`}><span className={index === intelligence.risk_timeline.length - 1 ? 'current' : ''}>{index === intelligence.risk_timeline.length - 1 && <Check size={12}/>}</span><p><strong>{point.score}/100 · {point.level}</strong><br/>{new Date(point.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p></div>)}</section><section className="drawer-section"><h3>Submit site evidence</h3><p className="evidence-note">Metadata only for this prototype. The server verifies time, progress, and a 2 km project radius.</p><form className="evidence-form" onSubmit={submitEvidence}><div><label>Latitude<input type="number" min="6" max="38" step="0.0001" value={evidenceLatitude} onChange={event => setEvidenceLatitude(event.target.value)} required/></label><label>Longitude<input type="number" min="68" max="98" step="0.0001" value={evidenceLongitude} onChange={event => setEvidenceLongitude(event.target.value)} required/></label></div><label>Observed progress (%)<input type="number" min={project.progress} max="100" value={evidenceProgress} onChange={event => setEvidenceProgress(event.target.value)} required/></label><label>Inspection remarks<textarea value={evidenceRemarks} onChange={event => setEvidenceRemarks(event.target.value)} minLength={3} maxLength={1000} required/></label><button className="button secondary" disabled={savingEvidence}>{savingEvidence ? 'Verifying evidence…' : 'Submit verified metadata'}</button></form></section></>}</div><footer>{actionMessage && <span className="drawer-message">{actionMessage}</span>}<button className="button secondary" onClick={onClose}>Close</button>{alert?.status === 'open' && <button className="button primary" onClick={startReview}><ClipboardCheck size={17}/> Start review</button>}</footer></aside></>
 }
 
 function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: ApiUser) => void }) {
