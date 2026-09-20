@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, AlertTriangle, BarChart3, Bell,
-  Building2, CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp,
+  Building2, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp,
   ClipboardCheck, Clock3, Download, FileSearch, Filter, FolderKanban, Gauge,
   IndianRupee, LayoutDashboard, LockKeyhole, Map, Menu, Moon,
   Network, PanelLeftClose, Search, Settings, ShieldCheck, Sparkles, Sun,
   Users, X, Zap, LogOut, Eye, EyeOff, UserRound, Mail, MapPin, Fingerprint,
   KeyRound, BadgeCheck, Globe2, BriefcaseBusiness, Printer, FileText, CheckCircle2, ArrowRight,
 } from 'lucide-react'
-import { activity, states, trend, type Project, type RiskLevel } from './data'
+import { activity, states, stateProgressData, trend, type DistrictProgress, type Project, type RiskLevel, type StateProgress } from './data'
 import { api, type ApiAlert, type ApiDashboardSummary, type ApiDelayPrediction, type ApiProject, type ApiProjectIntelligence, type ApiUser } from './api'
 import { GisMap, type MapMode } from './GisMap'
 
@@ -93,6 +93,28 @@ const pageDescriptions: Record<Page, string> = {
   profile: 'Review your official identity, jurisdiction and session security.',
 }
 
+const pageNames: Record<Page, string> = {
+  overview: 'Command centre',
+  alerts: 'Risk alerts',
+  projects: 'Works & projects',
+  map: 'Map intelligence',
+  cases: 'Investigations',
+  reports: 'Reports',
+  admin: 'Administration',
+  profile: 'Profile',
+}
+
+type NavigationState = {
+  page: Page
+  projectId: string | null
+}
+
+const getInitialPage = (): Page => {
+  const hash = window.location.hash.replace('#', '') as Page
+  const validPages: Page[] = ['overview', 'alerts', 'projects', 'map', 'cases', 'reports', 'admin', 'profile']
+  return validPages.includes(hash) ? hash : 'overview'
+}
+
 const roleLabels: Record<ApiUser['role'], Role> = {
   ministry: 'Ministry National Supervisor', state: 'State Nodal Authority', district: 'District Authority',
   auditor: 'Auditor / Investigator', field_officer: 'District Authority', mp: 'Ministry National Supervisor',
@@ -110,7 +132,13 @@ const toProject = (p: ApiProject): Project => ({
 })
 
 function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void }) {
-  const [page, setPage] = useState<Page>('overview')
+  const [history, setHistory] = useState<NavigationState[]>([
+    { page: getInitialPage(), projectId: null },
+  ])
+  const [historyIndex, setHistoryIndex] = useState(0)
+
+  const currentState = history[historyIndex] ?? { page: 'overview', projectId: null }
+  const page = currentState.page
   const role = roleLabels[user.role]
   const [projectData, setProjectData] = useState<Project[]>([])
   const [summary, setSummary] = useState<ApiDashboardSummary | null>(null)
@@ -126,6 +154,124 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Project | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+
+  const navigateToPage = (nextPage: Page) => {
+    if (nextPage === page && !selected) return
+    setSelected(null)
+    setHistory(prev => [
+      ...prev.slice(0, historyIndex + 1),
+      { page: nextPage, projectId: null },
+    ])
+    setHistoryIndex(prev => prev + 1)
+    window.history.pushState({ page: nextPage, projectId: null }, '', `#${nextPage}`)
+  }
+  const setPage = navigateToPage
+
+  const handleSelectProject = (project: Project | null) => {
+    setSelected(project)
+    const newProjectId = project ? project.id : null
+    if (newProjectId === currentState.projectId) return
+    setHistory(prev => [
+      ...prev.slice(0, historyIndex + 1),
+      { page, projectId: newProjectId },
+    ])
+    setHistoryIndex(prev => prev + 1)
+  }
+
+  const goBack = () => {
+    if (historyIndex > 0) {
+      const prevIndex = historyIndex - 1
+      const prevState = history[prevIndex]
+      setHistoryIndex(prevIndex)
+      if (prevState.projectId) {
+        const found = projectData.find(p => p.id === prevState.projectId)
+        setSelected(found ?? null)
+      } else {
+        setSelected(null)
+      }
+      window.history.pushState(prevState, '', `#${prevState.page}`)
+    }
+  }
+
+  const goForward = () => {
+    if (historyIndex < history.length - 1) {
+      const nextIndex = historyIndex + 1
+      const nextState = history[nextIndex]
+      setHistoryIndex(nextIndex)
+      if (nextState.projectId) {
+        const found = projectData.find(p => p.id === nextState.projectId)
+        setSelected(found ?? null)
+      } else {
+        setSelected(null)
+      }
+      window.history.pushState(nextState, '', `#${nextState.page}`)
+    }
+  }
+
+  const canGoBack = historyIndex > 0
+  const canGoForward = historyIndex < history.length - 1
+
+  const getNavLabel = (state?: NavigationState) => {
+    if (!state) return ''
+    const title = pageNames[state.page] ?? state.page
+    if (state.projectId) {
+      return `${title} · ${state.projectId}`
+    }
+    return title
+  }
+
+  // Restore project selection if projectData loads after history state set
+  useEffect(() => {
+    if (currentState.projectId && !selected && projectData.length > 0) {
+      const found = projectData.find(p => p.id === currentState.projectId)
+      if (found) setSelected(found)
+    }
+  }, [currentState.projectId, projectData, selected])
+
+  // Sync browser popstate (browser back/forward buttons)
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      if (e.state && typeof e.state.page === 'string') {
+        const targetPage = e.state.page as Page
+        const targetProjectId = e.state.projectId ?? null
+        setHistory(prev => {
+          const idx = prev.findIndex(item => item.page === targetPage && item.projectId === targetProjectId)
+          if (idx !== -1) {
+            setHistoryIndex(idx)
+            return prev
+          }
+          setHistoryIndex(prev.length)
+          return [...prev, { page: targetPage, projectId: targetProjectId }]
+        })
+        if (targetProjectId) {
+          const found = projectData.find(p => p.id === targetProjectId)
+          setSelected(found ?? null)
+        } else {
+          setSelected(null)
+        }
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [projectData])
+
+  // Keyboard navigation shortcuts: Alt+ArrowLeft (back) and Alt+ArrowRight (forward)
+  useEffect(() => {
+    const handleNavShortcuts = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault()
+        goBack()
+      } else if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault()
+        goForward()
+      }
+    }
+    document.addEventListener('keydown', handleNavShortcuts)
+    return () => document.removeEventListener('keydown', handleNavShortcuts)
+  }, [historyIndex, history.length, projectData])
 
   // Sync dark mode with <html> so body/viewport background matches
   useEffect(() => {
@@ -249,11 +395,35 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
 
       <main className={`main ${collapsed ? 'main-wide' : ''}`}>
         <header className="topbar">
-          <button className="icon-button mobile-toggle" onClick={() => setMobileMenu(true)} aria-label="Open navigation"><Menu size={21} /></button>
-          <div className="global-search">
-            <Search size={18} />
-            <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search work ID, district, agency or vendor…" aria-label="Global search" />
-            <kbd>⌘ K</kbd>
+          <div className="topbar-left">
+            <button className="icon-button mobile-toggle" onClick={() => setMobileMenu(true)} aria-label="Open navigation"><Menu size={21} /></button>
+            <div className="nav-history-cluster" role="group" aria-label="Navigation history">
+              <button
+                type="button"
+                className="icon-button nav-history-btn"
+                onClick={goBack}
+                disabled={!canGoBack}
+                aria-label="Previous page (Alt + Left Arrow)"
+                title={canGoBack ? `Previous: ${getNavLabel(history[historyIndex - 1])} (Alt + ←)` : 'No previous history'}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                type="button"
+                className="icon-button nav-history-btn"
+                onClick={goForward}
+                disabled={!canGoForward}
+                aria-label="Next page (Alt + Right Arrow)"
+                title={canGoForward ? `Next: ${getNavLabel(history[historyIndex + 1])} (Alt + →)` : 'No forward history'}
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+            <div className="global-search">
+              <Search size={18} />
+              <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search work ID, district, agency or vendor…" aria-label="Global search" />
+              <kbd>⌘ K</kbd>
+            </div>
           </div>
           <div className="top-actions">
             <button className="icon-button" onClick={() => setDark(v => !v)} aria-label={`Switch to ${dark ? 'light' : 'dark'} mode`} aria-pressed={dark}>{dark ? <Sun size={19} /> : <Moon size={19} />}</button>
@@ -285,18 +455,30 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
 
           {scanMessage && <div className="system-message"><ShieldCheck size={16}/>{scanMessage}<button onClick={() => setScanMessage('')}><X size={15}/></button></div>}
 
-          {page === 'overview' && <Overview projects={filtered} summary={summary} onSelect={setSelected} isDark={dark} onNavigateMap={() => setPage('map')} />}
-          {page === 'alerts' && <AlertsView projects={filtered} onSelect={setSelected} onRunScan={runScan} scanning={scanning} />}
-          {page === 'projects' && <ProjectsView projects={filtered} onSelect={setSelected} />}
-          {page === 'map' && <MapView projects={filtered} onSelect={setSelected} isDark={dark} />}
-          {page === 'cases' && <CasesView projects={filtered} onSelectProject={setSelected} />}
+          {page === 'overview' && (
+            <Overview
+              projects={filtered}
+              summary={summary}
+              onSelect={handleSelectProject}
+              isDark={dark}
+              onNavigateMap={() => setPage('map')}
+              onNavigateAlerts={() => setPage('alerts')}
+              onNavigateProjects={() => setPage('projects')}
+              onNavigateReports={() => setPage('reports')}
+              onNavigateCases={() => setPage('cases')}
+            />
+          )}
+          {page === 'alerts' && <AlertsView projects={filtered} onSelect={handleSelectProject} onRunScan={runScan} scanning={scanning} />}
+          {page === 'projects' && <ProjectsView projects={filtered} onSelect={handleSelectProject} />}
+          {page === 'map' && <MapView projects={filtered} onSelect={handleSelectProject} isDark={dark} />}
+          {page === 'cases' && <CasesView projects={filtered} onSelectProject={handleSelectProject} />}
           {page === 'reports' && <ReportsView projects={projectData} summary={summary} user={user} role={role} />}
           {page === 'admin' && <AdminView />}
           {page === 'profile' && <ProfileView user={user} role={role} onLogout={onLogout} />}
         </div>
       </main>
 
-      {selected && <ProjectDrawer project={selected} onClose={() => setSelected(null)} />}
+      {selected && <ProjectDrawer project={selected} onClose={() => handleSelectProject(null)} />}
       {scanResult && <ScanResultModal result={scanResult} onClose={() => setScanResult(null)} onNavigateAlerts={() => { setScanResult(null); setPage('alerts') }} />}
     </div>
   )
@@ -304,22 +486,130 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
 
 // pageDescriptions moved above DashboardApp for correct declaration order
 
-function Overview({ projects, summary, onSelect, isDark, onNavigateMap }: { projects: Project[]; summary: ApiDashboardSummary | null; onSelect: (p: Project) => void; isDark: boolean; onNavigateMap: () => void }) {
+function Overview({
+  projects,
+  summary,
+  onSelect,
+  isDark,
+  onNavigateMap,
+  onNavigateAlerts,
+  onNavigateProjects,
+  onNavigateReports,
+  onNavigateCases,
+}: {
+  projects: Project[]
+  summary: ApiDashboardSummary | null
+  onSelect: (p: Project) => void
+  isDark: boolean
+  onNavigateMap: () => void
+  onNavigateAlerts: () => void
+  onNavigateProjects?: () => void
+  onNavigateReports?: () => void
+  onNavigateCases?: () => void
+}) {
   const utilization = summary && summary.sanctioned_lakh > 0
     ? `${Math.round(summary.expenditure_lakh / summary.sanctioned_lakh * 100)}%`
     : '—'
+
+  const priorityProjects = useMemo(() => [...projects].sort((a, b) => b.risk - a.risk).slice(0, 4), [projects])
+
+  const [chartMode, setChartMode] = useState<'trend' | 'states' | 'districts'>('trend')
+  const [selectedStateName, setSelectedStateName] = useState<string>('Karnataka')
+
+  const selectedStateData = useMemo(() => {
+    return stateProgressData.find(s => s.name === selectedStateName) ?? stateProgressData[0]
+  }, [selectedStateName])
+
+  const handleSelectAnalyticsState = (stateName: string) => {
+    setSelectedStateName(stateName)
+    setChartMode('districts')
+  }
+
+  const chartHeader = useMemo(() => {
+    if (chartMode === 'trend') {
+      return {
+        title: 'Risk intelligence trend',
+        subtitle: 'Detected vs. resolved signals · last 6 months',
+        action: 'View analytics',
+        onAction: () => setChartMode('states'),
+      }
+    }
+    if (chartMode === 'states') {
+      return {
+        title: 'State progress analytics',
+        subtitle: 'Comparative execution progress & fund absorption across states · Click any state to view district graph',
+        action: 'View risk trend',
+        onAction: () => setChartMode('trend'),
+      }
+    }
+    return {
+      title: `${selectedStateName} district progress`,
+      subtitle: `District-level physical execution & milestone progress in ${selectedStateName}`,
+      action: '← All states',
+      onAction: () => setChartMode('states'),
+    }
+  }, [chartMode, selectedStateName])
+
   return <>
     <section className="metrics-grid">
-      <Metric icon={FolderKanban} label="Active works" value={summary ? summary.active_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.delayed_works) : '—'} note="delayed works in your scope" color="teal" />
-      <Metric icon={IndianRupee} label="Expenditure monitored" value={summary ? formatCrore(summary.expenditure_lakh / 100) : '—'} delta={utilization} note={summary ? `of ${formatCrore(summary.sanctioned_lakh / 100)} sanctioned` : 'loading authorized portfolio'} color="blue" />
-      <Metric icon={AlertTriangle} label="High-risk works" value={summary ? summary.high_risk_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.open_alerts) : '—'} note="open alerts requiring review" color="red" />
-      <Metric icon={Clock3} label="Delayed works" value={summary ? summary.delayed_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.active_works) : '—'} note="active works assessed" color="amber" />
+      <Metric icon={FolderKanban} label="Active works" value={summary ? summary.active_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.delayed_works) : '—'} note="delayed works in your scope" color="teal" onClick={onNavigateProjects} />
+      <Metric icon={IndianRupee} label="Expenditure monitored" value={summary ? formatCrore(summary.expenditure_lakh / 100) : '—'} delta={utilization} note={summary ? `of ${formatCrore(summary.sanctioned_lakh / 100)} sanctioned` : 'loading authorized portfolio'} color="blue" onClick={onNavigateProjects} />
+      <Metric icon={AlertTriangle} label="High-risk works" value={summary ? summary.high_risk_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.open_alerts) : '—'} note="open alerts requiring review" color="red" onClick={onNavigateAlerts} />
+      <Metric icon={Clock3} label="Delayed works" value={summary ? summary.delayed_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.active_works) : '—'} note="active works assessed" color="amber" onClick={onNavigateProjects} />
     </section>
 
     <section className="dashboard-grid">
       <div className="card risk-trend-card">
-        <CardHeader title="Risk intelligence trend" subtitle="Detected vs. resolved signals · last 6 months" action="View analytics" />
-        <TrendChart />
+        <CardHeader
+          title={chartHeader.title}
+          subtitle={chartHeader.subtitle}
+          action={chartHeader.action}
+          onAction={chartHeader.onAction}
+        />
+
+        <div className="chart-tab-strip">
+          <div className="chart-tab-pills" role="tablist" aria-label="Chart view mode">
+            <button
+              type="button"
+              className={`chart-tab-btn ${chartMode === 'trend' ? 'active' : ''}`}
+              onClick={() => setChartMode('trend')}
+            >
+              <Activity size={13} /> Risk trend
+            </button>
+            <button
+              type="button"
+              className={`chart-tab-btn ${chartMode === 'states' ? 'active' : ''}`}
+              onClick={() => setChartMode('states')}
+            >
+              <BarChart3 size={13} /> State progress
+            </button>
+            <button
+              type="button"
+              className={`chart-tab-btn ${chartMode === 'districts' ? 'active' : ''}`}
+              onClick={() => setChartMode('districts')}
+            >
+              <Network size={13} /> District progress {chartMode === 'districts' && `(${selectedStateName})`}
+            </button>
+          </div>
+
+          <span className="chart-context-badge">
+            {chartMode === 'trend' && 'Trend monitoring'}
+            {chartMode === 'states' && '5 states benchmarked'}
+            {chartMode === 'districts' && `${selectedStateData.districts.length} districts mapped`}
+          </span>
+        </div>
+
+        {chartMode === 'trend' && <TrendChart />}
+        {chartMode === 'states' && (
+          <StateProgressChart onSelectState={handleSelectAnalyticsState} />
+        )}
+        {chartMode === 'districts' && (
+          <DistrictProgressChart
+            stateName={selectedStateName}
+            onBack={() => setChartMode('states')}
+            onSelectState={(name) => setSelectedStateName(name)}
+          />
+        )}
       </div>
       <div className="card map-card">
         <CardHeader title="National risk distribution" subtitle="Live satellite & project-risk concentration" action="Open full map" onAction={onNavigateMap} />
@@ -330,20 +620,25 @@ function Overview({ projects, summary, onSelect, isDark, onNavigateMap }: { proj
 
     <section className="dashboard-grid lower-grid">
       <div className="card alerts-card">
-        <CardHeader title="Priority alerts" subtitle="Ranked by risk, confidence and potential impact" action="View all 482" />
-        <ProjectTable projects={projects.slice(0, 4)} onSelect={onSelect} compact />
+        <CardHeader
+          title="Priority alerts"
+          subtitle="Ranked by risk, confidence and potential impact"
+          action={summary ? `View all ${summary.open_alerts}` : 'View all alerts'}
+          onAction={onNavigateAlerts}
+        />
+        <ProjectTable projects={priorityProjects} onSelect={onSelect} compact />
       </div>
       <div className="card activity-card">
         <CardHeader title="Live activity" subtitle="Latest actions across the platform" />
         <div className="activity-list">
           {activity.map(item => <div className="activity-item" key={item.title}><span className={`activity-icon ${item.tone}`}><Activity size={15} /></span><div><strong>{item.title}</strong><p>{item.meta}</p></div><time>{item.time}</time></div>)}
         </div>
-        <button className="text-button full">View complete audit activity <ChevronRight size={15} /></button>
+        <button className="text-button full" onClick={onNavigateCases}>View complete audit activity <ChevronRight size={15} /></button>
       </div>
     </section>
 
     <section className="card state-card">
-      <CardHeader title="State performance watch" subtitle="Relative risk based on active work portfolio" action="Compare all states" />
+      <CardHeader title="State performance watch" subtitle="Relative risk based on active work portfolio" action="Compare all states" onAction={onNavigateMap} />
       <div className="state-list">
         {states.map((state, i) => <div className="state-row" key={state.name}><span className="rank">{String(i + 1).padStart(2, '0')}</span><div className="state-name"><strong>{state.name}</strong><span>{state.projects.toLocaleString('en-IN')} active works</span></div><div className="bar-track"><span style={{ width: `${state.score}%` }} /></div><strong className="risk-number">{state.highRisk}</strong><span className="muted-label">high risk</span><ChevronRight size={17} /></div>)}
       </div>
@@ -351,8 +646,22 @@ function Overview({ projects, summary, onSelect, isDark, onNavigateMap }: { proj
   </>
 }
 
-function Metric({ icon: Icon, label, value, delta, note, color }: { icon: typeof Gauge; label: string; value: string; delta: string; note: string; color: string }) {
-  return <article className="metric card"><div className={`metric-icon ${color}`}><Icon size={20} /></div><div className="metric-top"><span>{label}</span><CircleHelp size={14} /></div><div className="metric-value">{value}</div><div className="metric-foot"><span className="delta neutral">{delta}</span><span>{note}</span></div></article>
+function Metric({ icon: Icon, label, value, delta, note, color, onClick }: { icon: typeof Gauge; label: string; value: string; delta: string; note: string; color: string; onClick?: () => void }) {
+  return (
+    <article
+      className={`metric card ${onClick ? 'interactive' : ''}`}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      style={onClick ? { cursor: 'pointer' } : undefined}
+    >
+      <div className={`metric-icon ${color}`}><Icon size={20} /></div>
+      <div className="metric-top"><span>{label}</span><CircleHelp size={14} /></div>
+      <div className="metric-value">{value}</div>
+      <div className="metric-foot"><span className="delta neutral">{delta}</span><span>{note}</span></div>
+    </article>
+  )
 }
 
 function CardHeader({ title, subtitle, action, onAction }: { title: string; subtitle: string; action?: string; onAction?: () => void }) {
@@ -366,12 +675,339 @@ function TrendChart() {
   return <div className="chart-wrap"><div className="chart-legend"><span><i className="dot detected" />Risk detected</span><span><i className="dot resolved" />Resolved</span><b>+18.6% resolution rate</b></div><svg viewBox="0 0 520 190" role="img" aria-label="Risk intelligence trend line chart"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#df6b58" stopOpacity=".28"/><stop offset="1" stopColor="#df6b58" stopOpacity="0"/></linearGradient></defs>{[40,80,120,160].map(y => <line key={y} x1="42" x2="478" y1={y} y2={y} className="grid-line"/>)}<polygon points={`42,160 ${pointsA} 472,160`} fill="url(#area)"/><polyline points={pointsA} className="line detected-line"/><polyline points={pointsB} className="line resolved-line"/>{trend.map((d, i) => <g key={d.month}><text x={42 + i * 86} y="183" textAnchor="middle">{d.month}</text><circle cx={42 + i * 86} cy={160 - (d.detected / max) * 120} r="3.8" className="point detected-point"/><circle cx={42 + i * 86} cy={160 - (d.resolved / max) * 120} r="3.8" className="point resolved-point"/></g>)}</svg></div>
 }
 
-function ProjectTable({ projects, onSelect, compact = false }: { projects: Project[]; onSelect: (p: Project) => void; compact?: boolean }) {
-  return <div className="table-scroll"><table><thead><tr><th>Work</th><th>Risk</th>{!compact && <th>Sanctioned</th>}<th>Progress</th><th>Primary signal</th><th /></tr></thead><tbody>{projects.map(p => <tr key={p.id} onClick={() => onSelect(p)}><td><strong>{p.title}</strong><span>{p.id} · {p.location}</span></td><td><span className={riskClass(p.level)}><i />{p.risk} {p.level}</span></td>{!compact && <td><strong>{formatCrore(p.sanctioned / 100)}</strong><span>{formatCrore(p.spent / 100)} spent</span></td>}<td><div className="progress-cell"><div><span style={{ width: `${p.progress}%` }}/></div><b>{p.progress}%</b></div></td><td className="issue-cell">{p.issue}</td><td><button className="row-action" aria-label={`Open ${p.title}`}><ChevronRight size={17}/></button></td></tr>)}</tbody></table></div>
+function StateProgressChart({ onSelectState }: { onSelectState: (stateName: string) => void }) {
+  const [hoveredState, setHoveredState] = useState<string | null>(null)
+
+  return (
+    <div className="analytics-chart-container">
+      <div className="analytics-meta-strip">
+        <span><b>5</b> States Assessed</span>
+        <span>Avg. Physical Progress: <b>70.6%</b></span>
+        <span>Avg. Fund Absorption: <b>73.6%</b></span>
+        <small className="hint-pill">Click any state to view district graph</small>
+      </div>
+
+      <div className="state-chart-body">
+        {stateProgressData.map((st) => (
+          <div
+            key={st.name}
+            className={`state-progress-row ${hoveredState === st.name ? 'hovered' : ''}`}
+            onClick={() => onSelectState(st.name)}
+            onMouseEnter={() => setHoveredState(st.name)}
+            onMouseLeave={() => setHoveredState(null)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onSelectState(st.name)
+              }
+            }}
+            title={`Click to open ${st.name} district progress graph`}
+          >
+            <div className="state-row-info">
+              <strong>{st.name}</strong>
+              <span>{st.totalWorks.toLocaleString('en-IN')} works · ₹{st.spentCrore} Cr / ₹{st.sanctionedCrore} Cr</span>
+            </div>
+            <div className="state-bars-wrap">
+              <div className="dual-track">
+                <div
+                  className="bar physical-bar"
+                  style={{ width: `${st.progress}%` }}
+                >
+                  <span className="bar-label">{st.progress}% physical</span>
+                </div>
+                <div
+                  className="financial-marker"
+                  style={{ left: `${st.financialProgress}%` }}
+                  title={`Financial absorption: ${st.financialProgress}%`}
+                />
+              </div>
+            </div>
+            <div className="state-row-action">
+              <span className="drilldown-badge">Districts <ChevronRight size={13} /></span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="analytics-legend">
+        <span><i className="legend-box physical" /> Physical Progress (%)</span>
+        <span><i className="legend-line financial" /> Financial Absorption Marker</span>
+        <span className="milestone-text">Click state row to open district graph</span>
+      </div>
+    </div>
+  )
 }
 
-function Toolbar({ searchPlaceholder = 'Search this view…' }: { searchPlaceholder?: string }) {
-  return <div className="toolbar"><div className="local-search"><Search size={17}/><input placeholder={searchPlaceholder}/></div><button className="button secondary"><Filter size={16}/> Filters <span className="filter-count">3</span></button><button className="button secondary"><CalendarDays size={16}/> Last 30 days</button></div>
+function DistrictProgressChart({
+  stateName,
+  onBack,
+  onSelectState,
+}: {
+  stateName: string
+  onBack: () => void
+  onSelectState: (name: string) => void
+}) {
+  const stateData = useMemo(() => {
+    return stateProgressData.find(s => s.name === stateName) || stateProgressData[0]
+  }, [stateName])
+
+  const [activeDistrict, setActiveDistrict] = useState<DistrictProgress | null>(null)
+
+  return (
+    <div className="analytics-chart-container">
+      {/* State Switcher Chips */}
+      <div className="district-state-chips">
+        <button className="back-link-btn" onClick={onBack} title="Back to All States">
+          <ChevronLeft size={15} /> All states
+        </button>
+        <div className="chips-list">
+          {stateProgressData.map(s => (
+            <button
+              key={s.name}
+              type="button"
+              className={`state-chip ${s.name === stateData.name ? 'active' : ''}`}
+              onClick={() => onSelectState(s.name)}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* State Overview Header */}
+      <div className="district-summary-banner">
+        <div>
+          <span>Selected State</span>
+          <strong>{stateData.name}</strong>
+        </div>
+        <div>
+          <span>Physical Progress</span>
+          <strong className="text-green">{stateData.progress}% avg</strong>
+        </div>
+        <div>
+          <span>Financial Absorption</span>
+          <strong className="text-blue">{stateData.financialProgress}%</strong>
+        </div>
+        <div>
+          <span>Districts Mapped</span>
+          <strong>{stateData.districts.length} districts</strong>
+        </div>
+      </div>
+
+      {/* District Progress Graph: Grouped Bar/Column SVG Chart */}
+      <div className="district-graph-wrap">
+        <svg viewBox="0 0 540 175" className="district-svg-chart" role="img" aria-label={`District progress chart for ${stateData.name}`}>
+          {/* Reference grid lines */}
+          {[0, 25, 50, 75, 100].map(val => {
+            const y = 142 - (val / 100) * 115
+            return (
+              <g key={val}>
+                <line x1="38" y1={y} x2="530" y2={y} className="grid-line" strokeDasharray={val === 50 || val === 75 ? '3 3' : undefined} />
+                <text x="30" y={y + 3} textAnchor="end" className="district-axis-text">{val}%</text>
+              </g>
+            )
+          })}
+
+          {/* District Bars */}
+          {stateData.districts.map((dist, i) => {
+            const numDistricts = stateData.districts.length
+            const slotWidth = (490 - 45) / numDistricts
+            const barW = Math.max(12, Math.min(22, slotWidth * 0.35))
+            const slotCenter = 45 + (i + 0.5) * slotWidth
+            const physX = slotCenter - barW - 1
+            const finX = slotCenter + 1
+
+            const physHeight = (dist.progress / 100) * 115
+            const physY = 142 - physHeight
+
+            const finHeight = (dist.financialProgress / 100) * 115
+            const finY = 142 - finHeight
+
+            const isHovered = activeDistrict?.name === dist.name
+
+            return (
+              <g
+                key={dist.name}
+                className={`district-bar-group ${isHovered ? 'hovered' : ''}`}
+                onMouseEnter={() => setActiveDistrict(dist)}
+                onMouseLeave={() => setActiveDistrict(null)}
+                onClick={() => setActiveDistrict(dist)}
+                style={{ cursor: 'pointer' }}
+                role="button"
+                tabIndex={0}
+                aria-label={`${dist.name}: ${dist.progress}% progress, ${dist.financialProgress}% financial`}
+              >
+                {/* Physical Progress Bar */}
+                <rect
+                  x={physX}
+                  y={physY}
+                  width={barW}
+                  height={physHeight}
+                  rx="3"
+                  className="bar-rect physical"
+                />
+
+                {/* Financial Progress Bar */}
+                <rect
+                  x={finX}
+                  y={finY}
+                  width={barW}
+                  height={finHeight}
+                  rx="3"
+                  className="bar-rect financial"
+                />
+
+                {/* District Label */}
+                <text
+                  x={slotCenter}
+                  y="158"
+                  textAnchor="middle"
+                  className="district-axis-text"
+                >
+                  {dist.name.replace('Bengaluru', 'Blr').replace('Metropolitan', 'Metro')}
+                </text>
+                
+                {/* Physical value */}
+                <text
+                  x={slotCenter}
+                  y={Math.min(physY, finY) - 5}
+                  textAnchor="middle"
+                  className="bar-val-text"
+                >
+                  {dist.progress}%
+                </text>
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+
+      {/* District Detail Tooltip / Card */}
+      {activeDistrict ? (
+        <div className="district-detail-card">
+          <div className="district-detail-head">
+            <strong>{activeDistrict.name}</strong>
+            <span className="signal-pill">{activeDistrict.primarySignal}</span>
+          </div>
+          <div className="district-metrics-row">
+            <div><span>Physical Progress</span><b>{activeDistrict.progress}%</b></div>
+            <div><span>Financial Utilization</span><b>{activeDistrict.financialProgress}% (₹{activeDistrict.spentLakh}L / ₹{activeDistrict.sanctionedLakh}L)</b></div>
+            <div><span>Active Works</span><b>{activeDistrict.totalWorks} works</b></div>
+            <div><span>Delayed Works</span><b className="text-amber">{activeDistrict.delayedWorks} delayed</b></div>
+          </div>
+        </div>
+      ) : (
+        <div className="district-detail-card placeholder">
+          <span>Hover or tap any district bar to inspect physical execution, financial tranches and delay signals</span>
+        </div>
+      )}
+
+      {/* Legend */}
+      <div className="analytics-legend">
+        <span><i className="legend-box physical" /> Physical Progress (%)</span>
+        <span><i className="legend-box financial" /> Financial Utilization (%)</span>
+        <span className="milestone-text">--- 50% & 75% Target Milestones</span>
+      </div>
+    </div>
+  )
+}
+
+function ProjectTable({ projects, onSelect, compact = false }: { projects: Project[]; onSelect: (p: Project) => void; compact?: boolean }) {
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Work</th>
+            <th>Risk</th>
+            {!compact && <th>Sanctioned</th>}
+            <th>Progress</th>
+            <th>Primary signal</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {projects.map(p => (
+            <tr
+              key={p.id}
+              onClick={() => onSelect(p)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelect(p)
+                }
+              }}
+              tabIndex={0}
+              role="button"
+              aria-label={`Open ${p.title}`}
+            >
+              <td>
+                <strong>{p.title}</strong>
+                <span>{p.id} · {p.location}</span>
+              </td>
+              <td>
+                <span className={riskClass(p.level)}><i />{p.risk} {p.level}</span>
+              </td>
+              {!compact && (
+                <td>
+                  <strong>{formatCrore(p.sanctioned / 100)}</strong>
+                  <span>{formatCrore(p.spent / 100)} spent</span>
+                </td>
+              )}
+              <td>
+                <div className="progress-cell">
+                  <div><span style={{ width: `${p.progress}%` }}/></div>
+                  <b>{p.progress}%</b>
+                </div>
+              </td>
+              <td className="issue-cell">{p.issue}</td>
+              <td>
+                <button
+                  type="button"
+                  className="row-action"
+                  aria-label={`Open details for ${p.title}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSelect(p)
+                  }}
+                >
+                  <ChevronRight size={17}/>
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function Toolbar({
+  searchPlaceholder = 'Search this view…',
+  search = '',
+  onSearchChange,
+}: {
+  searchPlaceholder?: string
+  search?: string
+  onSearchChange?: (val: string) => void
+}) {
+  return (
+    <div className="toolbar">
+      <div className="local-search">
+        <Search size={17} />
+        <input
+          placeholder={searchPlaceholder}
+          value={search}
+          onChange={e => onSearchChange?.(e.target.value)}
+          aria-label={searchPlaceholder}
+        />
+      </div>
+      <button className="button secondary"><Filter size={16}/> Filters <span className="filter-count">3</span></button>
+      <button className="button secondary"><CalendarDays size={16}/> Last 30 days</button>
+    </div>
+  )
 }
 
 function AlertsView({
@@ -386,16 +1022,24 @@ function AlertsView({
   scanning?: boolean
 }) {
   const [filter, setFilter] = useState<'all' | 'critical' | 'high' | 'assigned'>('all')
+  const [localSearch, setLocalSearch] = useState('')
 
-  const criticalCount = useMemo(() => projects.filter(p => p.level === 'Critical').length, [projects])
-  const highCount = useMemo(() => projects.filter(p => p.level === 'High').length, [projects])
+  const sortedProjects = useMemo(() => [...projects].sort((a, b) => b.risk - a.risk), [projects])
+  const criticalCount = useMemo(() => sortedProjects.filter(p => p.level === 'Critical').length, [sortedProjects])
+  const highCount = useMemo(() => sortedProjects.filter(p => p.level === 'High').length, [sortedProjects])
 
   const filteredProjects = useMemo(() => {
-    if (filter === 'critical') return projects.filter(p => p.level === 'Critical')
-    if (filter === 'high') return projects.filter(p => p.level === 'High')
-    if (filter === 'assigned') return projects.slice(0, 2)
-    return projects
-  }, [projects, filter])
+    let list = sortedProjects
+    if (filter === 'critical') list = list.filter(p => p.level === 'Critical')
+    else if (filter === 'high') list = list.filter(p => p.level === 'High')
+    else if (filter === 'assigned') list = list.slice(0, 2)
+
+    if (localSearch.trim()) {
+      const q = localSearch.trim().toLowerCase()
+      list = list.filter(p => `${p.id} ${p.title} ${p.location} ${p.agency} ${p.issue}`.toLowerCase().includes(q))
+    }
+    return list
+  }, [sortedProjects, filter, localSearch])
 
   return (
     <>
@@ -421,7 +1065,11 @@ function AlertsView({
         )}
       </div>
       <section className="card data-card">
-        <Toolbar searchPlaceholder="Search alert, work or district…" />
+        <Toolbar
+          searchPlaceholder="Search alert, work or district…"
+          search={localSearch}
+          onSearchChange={setLocalSearch}
+        />
         <ProjectTable projects={filteredProjects} onSelect={onSelect} />
       </section>
     </>
@@ -429,7 +1077,31 @@ function AlertsView({
 }
 
 function ProjectsView({ projects, onSelect }: { projects: Project[]; onSelect: (p: Project) => void }) {
-  return <><section className="mini-stats"><div><span>All works</span><strong>18,420</strong></div><div><span>In progress</span><strong>11,864</strong></div><div><span>Delayed</span><strong>2,184</strong></div><div><span>Completed this FY</span><strong>4,372</strong></div></section><section className="card data-card"><Toolbar searchPlaceholder="Search work ID, title or agency…"/><ProjectTable projects={projects} onSelect={onSelect}/></section></>
+  const [localSearch, setLocalSearch] = useState('')
+  const filtered = useMemo(() => {
+    if (!localSearch.trim()) return projects
+    const q = localSearch.trim().toLowerCase()
+    return projects.filter(p => `${p.id} ${p.title} ${p.location} ${p.agency}`.toLowerCase().includes(q))
+  }, [projects, localSearch])
+
+  return (
+    <>
+      <section className="mini-stats">
+        <div><span>All works</span><strong>18,420</strong></div>
+        <div><span>In progress</span><strong>11,864</strong></div>
+        <div><span>Delayed</span><strong>2,184</strong></div>
+        <div><span>Completed this FY</span><strong>4,372</strong></div>
+      </section>
+      <section className="card data-card">
+        <Toolbar
+          searchPlaceholder="Search work ID, title or agency…"
+          search={localSearch}
+          onSearchChange={setLocalSearch}
+        />
+        <ProjectTable projects={filtered} onSelect={onSelect}/>
+      </section>
+    </>
+  )
 }
 
 function MapView({ projects, onSelect, isDark }: { projects: Project[]; onSelect: (p: Project) => void; isDark: boolean }) {
