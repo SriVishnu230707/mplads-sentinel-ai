@@ -7,8 +7,13 @@ import {
   Network, PanelLeftClose, Search, Settings, ShieldCheck, Sparkles, Sun,
   Users, X, Zap, LogOut, Eye, EyeOff, UserRound, Mail, MapPin, Fingerprint,
   KeyRound, BadgeCheck, Globe2, BriefcaseBusiness, Printer, FileText, CheckCircle2, ArrowRight,
+  Play, Pause, TrendingUp, SlidersHorizontal, ArrowUpDown,
 } from 'lucide-react'
-import { activity, states, stateProgressData, trend, type DistrictProgress, type Project, type RiskLevel, type StateProgress } from './data'
+import {
+  activity, states, stateProgressData, trend, timelineMonths,
+  type DistrictProgress, type Project, type RiskLevel, type StateProgress,
+  type TimelineMonth, type MonthlyProgress,
+} from './data'
 import { api, type ApiAlert, type ApiDashboardSummary, type ApiDelayPrediction, type ApiProject, type ApiProjectIntelligence, type ApiUser } from './api'
 import { GisMap, type MapMode } from './GisMap'
 
@@ -515,6 +520,23 @@ function Overview({
 
   const [chartMode, setChartMode] = useState<'trend' | 'states' | 'districts'>('trend')
   const [selectedStateName, setSelectedStateName] = useState<string>('Karnataka')
+  const [selectedMonth, setSelectedMonth] = useState<TimelineMonth>('Sep')
+  const [isPlayingTimeline, setIsPlayingTimeline] = useState<boolean>(false)
+  const [metricMode, setMetricMode] = useState<'both' | 'physical' | 'financial' | 'delayed'>('both')
+  const [sortBy, setSortBy] = useState<'progress' | 'delayed' | 'financial' | 'name'>('progress')
+
+  // Auto-advance timeline playback to show monthly progression animation
+  useEffect(() => {
+    if (!isPlayingTimeline) return
+    const interval = setInterval(() => {
+      setSelectedMonth(curr => {
+        const idx = timelineMonths.indexOf(curr)
+        const nextIdx = (idx + 1) % timelineMonths.length
+        return timelineMonths[nextIdx]
+      })
+    }, 1200)
+    return () => clearInterval(interval)
+  }, [isPlayingTimeline])
 
   const selectedStateData = useMemo(() => {
     return stateProgressData.find(s => s.name === selectedStateName) ?? stateProgressData[0]
@@ -529,7 +551,7 @@ function Overview({
     if (chartMode === 'trend') {
       return {
         title: 'Risk intelligence trend',
-        subtitle: 'Detected vs. resolved signals · last 6 months',
+        subtitle: 'Detected vs. resolved signals · interactive timeline with live hover analytics',
         action: 'View analytics',
         onAction: () => setChartMode('states'),
       }
@@ -537,18 +559,18 @@ function Overview({
     if (chartMode === 'states') {
       return {
         title: 'State progress analytics',
-        subtitle: 'Comparative execution progress & fund absorption across states · Click any state to view district graph',
+        subtitle: `Comparative progression · ${selectedMonth} 2026 · Click state to drill into districts`,
         action: 'View risk trend',
         onAction: () => setChartMode('trend'),
       }
     }
     return {
       title: `${selectedStateName} district progress`,
-      subtitle: `District-level physical execution & milestone progress in ${selectedStateName}`,
+      subtitle: `District execution timeline in ${selectedStateName} · ${selectedMonth} 2026`,
       action: '← All states',
       onAction: () => setChartMode('states'),
     }
-  }, [chartMode, selectedStateName])
+  }, [chartMode, selectedStateName, selectedMonth])
 
   return <>
     <section className="metrics-grid">
@@ -593,19 +615,33 @@ function Overview({
           </div>
 
           <span className="chart-context-badge">
-            {chartMode === 'trend' && 'Trend monitoring'}
-            {chartMode === 'states' && '5 states benchmarked'}
-            {chartMode === 'districts' && `${selectedStateData.districts.length} districts mapped`}
+            {chartMode === 'trend' && 'Dynamic timeline'}
+            {chartMode === 'states' && `Showing ${selectedMonth} progression (${stateProgressData.length} states)`}
+            {chartMode === 'districts' && `Showing ${selectedMonth} (${selectedStateData.districts.length} districts)`}
           </span>
         </div>
 
         {chartMode === 'trend' && <TrendChart />}
         {chartMode === 'states' && (
-          <StateProgressChart onSelectState={handleSelectAnalyticsState} />
+          <StateProgressChart
+            selectedMonth={selectedMonth}
+            onSelectMonth={(m) => setSelectedMonth(m)}
+            isPlaying={isPlayingTimeline}
+            onTogglePlay={() => setIsPlayingTimeline(p => !p)}
+            metricMode={metricMode}
+            onSelectMetric={(m) => setMetricMode(m)}
+            sortBy={sortBy}
+            onSelectSort={(s) => setSortBy(s)}
+            onSelectState={handleSelectAnalyticsState}
+          />
         )}
         {chartMode === 'districts' && (
           <DistrictProgressChart
             stateName={selectedStateName}
+            selectedMonth={selectedMonth}
+            onSelectMonth={(m) => setSelectedMonth(m)}
+            isPlaying={isPlayingTimeline}
+            onTogglePlay={() => setIsPlayingTimeline(p => !p)}
             onBack={() => setChartMode('states')}
             onSelectState={(name) => setSelectedStateName(name)}
           />
@@ -669,26 +705,318 @@ function CardHeader({ title, subtitle, action, onAction }: { title: string; subt
 }
 
 function TrendChart() {
+  const [range, setRange] = useState<'30d' | '90d' | '6m'>('6m')
+  const [showDetected, setShowDetected] = useState<boolean>(true)
+  const [showResolved, setShowResolved] = useState<boolean>(true)
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
+
+  const visibleData = useMemo(() => {
+    if (range === '30d') return trend.slice(-2)
+    if (range === '90d') return trend.slice(-3)
+    return trend
+  }, [range])
+
   const max = 90
-  const pointsA = trend.map((d, i) => `${42 + i * 86},${160 - (d.detected / max) * 120}`).join(' ')
-  const pointsB = trend.map((d, i) => `${42 + i * 86},${160 - (d.resolved / max) * 120}`).join(' ')
-  return <div className="chart-wrap"><div className="chart-legend"><span><i className="dot detected" />Risk detected</span><span><i className="dot resolved" />Resolved</span><b>+18.6% resolution rate</b></div><svg viewBox="0 0 520 190" role="img" aria-label="Risk intelligence trend line chart"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#df6b58" stopOpacity=".28"/><stop offset="1" stopColor="#df6b58" stopOpacity="0"/></linearGradient></defs>{[40,80,120,160].map(y => <line key={y} x1="42" x2="478" y1={y} y2={y} className="grid-line"/>)}<polygon points={`42,160 ${pointsA} 472,160`} fill="url(#area)"/><polyline points={pointsA} className="line detected-line"/><polyline points={pointsB} className="line resolved-line"/>{trend.map((d, i) => <g key={d.month}><text x={42 + i * 86} y="183" textAnchor="middle">{d.month}</text><circle cx={42 + i * 86} cy={160 - (d.detected / max) * 120} r="3.8" className="point detected-point"/><circle cx={42 + i * 86} cy={160 - (d.resolved / max) * 120} r="3.8" className="point resolved-point"/></g>)}</svg></div>
+  const count = visibleData.length
+  const stepX = count > 1 ? (478 - 42) / (count - 1) : 436
+
+  const pointsA = visibleData.map((d, i) => `${42 + i * stepX},${160 - (d.detected / max) * 120}`).join(' ')
+  const pointsB = visibleData.map((d, i) => `${42 + i * stepX},${160 - (d.resolved / max) * 120}`).join(' ')
+
+  const activePoint = hoveredIndex !== null && visibleData[hoveredIndex] ? visibleData[hoveredIndex] : null
+  const activeX = hoveredIndex !== null ? 42 + hoveredIndex * stepX : null
+
+  return (
+    <div className="chart-wrap">
+      <div className="trend-toolbar">
+        <div className="trend-range-pills" role="tablist" aria-label="Time horizon">
+          <button
+            type="button"
+            className={`trend-pill ${range === '30d' ? 'active' : ''}`}
+            onClick={() => setRange('30d')}
+          >
+            30 Days
+          </button>
+          <button
+            type="button"
+            className={`trend-pill ${range === '90d' ? 'active' : ''}`}
+            onClick={() => setRange('90d')}
+          >
+            90 Days
+          </button>
+          <button
+            type="button"
+            className={`trend-pill ${range === '6m' ? 'active' : ''}`}
+            onClick={() => setRange('6m')}
+          >
+            6 Months
+          </button>
+        </div>
+
+        <div className="trend-legend-toggles">
+          <button
+            type="button"
+            className={`toggle-btn ${showDetected ? '' : 'dimmed'}`}
+            onClick={() => setShowDetected(v => !v)}
+            title="Click to toggle Risk Detected line"
+          >
+            <i className="dot detected" /> Risk detected
+          </button>
+          <button
+            type="button"
+            className={`toggle-btn ${showResolved ? '' : 'dimmed'}`}
+            onClick={() => setShowResolved(v => !v)}
+            title="Click to toggle Resolved line"
+          >
+            <i className="dot resolved" /> Resolved
+          </button>
+        </div>
+      </div>
+
+      {activePoint && (
+        <div className="trend-hover-card">
+          <strong>{activePoint.month} 2026</strong>
+          <span><i className="dot detected" /> {activePoint.detected} risks flagged</span>
+          <span><i className="dot resolved" /> {activePoint.resolved} alerts resolved</span>
+          <span style={{ color: '#2e8f7a', fontWeight: 700 }}>
+            {Math.round((activePoint.resolved / activePoint.detected) * 100)}% resolution rate
+          </span>
+        </div>
+      )}
+
+      <svg
+        viewBox="0 0 520 190"
+        role="img"
+        aria-label="Risk intelligence trend line chart"
+        onMouseLeave={() => setHoveredIndex(null)}
+      >
+        <defs>
+          <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#df6b58" stopOpacity=".28" />
+            <stop offset="1" stopColor="#df6b58" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {[40, 80, 120, 160].map(y => (
+          <line key={y} x1="42" x2="478" y1={y} y2={y} className="grid-line" />
+        ))}
+
+        {showDetected && count > 1 && (
+          <polygon
+            points={`42,160 ${pointsA} ${42 + (count - 1) * stepX},160`}
+            fill="url(#area)"
+          />
+        )}
+
+        {showDetected && count > 1 && (
+          <polyline points={pointsA} className="line detected-line" />
+        )}
+        {showResolved && count > 1 && (
+          <polyline points={pointsB} className="line resolved-line" />
+        )}
+
+        {activeX !== null && (
+          <line
+            x1={activeX}
+            x2={activeX}
+            y1={25}
+            y2={165}
+            className="trend-guide-line"
+          />
+        )}
+
+        {visibleData.map((d, i) => {
+          const cx = 42 + i * stepX
+          const cyA = 160 - (d.detected / max) * 120
+          const cyB = 160 - (d.resolved / max) * 120
+          const isHovered = hoveredIndex === i
+
+          return (
+            <g
+              key={d.month}
+              onMouseEnter={() => setHoveredIndex(i)}
+              style={{ cursor: 'pointer' }}
+            >
+              <rect
+                x={cx - stepX / 2}
+                y={20}
+                width={stepX}
+                height={150}
+                fill="transparent"
+              />
+              <text x={cx} y="183" textAnchor="middle" style={{ fontWeight: isHovered ? 800 : 500 }}>
+                {d.month}
+              </text>
+              {showDetected && (
+                <circle
+                  cx={cx}
+                  cy={cyA}
+                  r={isHovered ? 6 : 3.8}
+                  className={`point detected-point ${isHovered ? 'trend-active-dot' : ''}`}
+                />
+              )}
+              {showResolved && (
+                <circle
+                  cx={cx}
+                  cy={cyB}
+                  r={isHovered ? 6 : 3.8}
+                  className={`point resolved-point ${isHovered ? 'trend-active-dot' : ''}`}
+                />
+              )}
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
 }
 
-function StateProgressChart({ onSelectState }: { onSelectState: (stateName: string) => void }) {
+function StateProgressChart({
+  selectedMonth,
+  onSelectMonth,
+  isPlaying,
+  onTogglePlay,
+  metricMode,
+  onSelectMetric,
+  sortBy,
+  onSelectSort,
+  onSelectState,
+}: {
+  selectedMonth: TimelineMonth
+  onSelectMonth: (m: TimelineMonth) => void
+  isPlaying: boolean
+  onTogglePlay: () => void
+  metricMode: 'both' | 'physical' | 'financial' | 'delayed'
+  onSelectMetric: (m: 'both' | 'physical' | 'financial' | 'delayed') => void
+  sortBy: 'progress' | 'delayed' | 'financial' | 'name'
+  onSelectSort: (s: 'progress' | 'delayed' | 'financial' | 'name') => void
+  onSelectState: (stateName: string) => void
+}) {
   const [hoveredState, setHoveredState] = useState<string | null>(null)
+
+  // Compute state data according to selectedMonth progression
+  const statesWithMonthData = useMemo(() => {
+    return stateProgressData.map(st => {
+      const monthRecord = st.history.find(h => h.month === selectedMonth) ?? {
+        progress: st.progress,
+        financialProgress: st.financialProgress,
+      }
+      const prevIdx = timelineMonths.indexOf(selectedMonth) - 1
+      const prevRecord = prevIdx >= 0 ? st.history.find(h => h.month === timelineMonths[prevIdx]) : null
+      const momDelta = prevRecord ? monthRecord.progress - prevRecord.progress : null
+
+      return {
+        ...st,
+        currentProgress: monthRecord.progress,
+        currentFinancial: monthRecord.financialProgress,
+        momDelta,
+      }
+    })
+  }, [selectedMonth])
+
+  const sortedStates = useMemo(() => {
+    const list = [...statesWithMonthData]
+    if (sortBy === 'progress') return list.sort((a, b) => b.currentProgress - a.currentProgress)
+    if (sortBy === 'financial') return list.sort((a, b) => b.currentFinancial - a.currentFinancial)
+    if (sortBy === 'delayed') return list.sort((a, b) => b.highRiskWorks - a.highRiskWorks)
+    return list.sort((a, b) => a.name.localeCompare(b.name))
+  }, [statesWithMonthData, sortBy])
+
+  const avgPhysical = Math.round(
+    statesWithMonthData.reduce((acc, s) => acc + s.currentProgress, 0) / statesWithMonthData.length
+  )
+  const avgFinancial = Math.round(
+    statesWithMonthData.reduce((acc, s) => acc + s.currentFinancial, 0) / statesWithMonthData.length
+  )
 
   return (
     <div className="analytics-chart-container">
-      <div className="analytics-meta-strip">
-        <span><b>5</b> States Assessed</span>
-        <span>Avg. Physical Progress: <b>70.6%</b></span>
-        <span>Avg. Fund Absorption: <b>73.6%</b></span>
-        <small className="hint-pill">Click any state to view district graph</small>
+      {/* Interactive Timeline Player & Month Scrubber */}
+      <div className="timeline-strip">
+        <div className="timeline-left">
+          <button
+            type="button"
+            className={`timeline-play-btn ${isPlaying ? 'playing' : ''}`}
+            onClick={onTogglePlay}
+            title={isPlaying ? 'Pause progression timeline' : 'Play progression timeline animation'}
+            aria-label={isPlaying ? 'Pause timeline' : 'Play timeline'}
+          >
+            {isPlaying ? <Pause size={13} /> : <Play size={13} style={{ marginLeft: 2 }} />}
+          </button>
+          <div className="timeline-label">
+            <span>Month:</span> <b>{selectedMonth} 2026</b>
+            {isPlaying && <small style={{ color: '#2e8f7a', fontWeight: 700 }}>(Playing…)</small>}
+          </div>
+        </div>
+
+        <div className="timeline-months-row" role="tablist" aria-label="Progression months">
+          {timelineMonths.map(m => (
+            <button
+              key={m}
+              type="button"
+              className={`month-step-btn ${m === selectedMonth ? 'active' : ''}`}
+              onClick={() => onSelectMonth(m)}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
       </div>
 
+      {/* Metric filter & sorting toolbar */}
+      <div className="analytics-filter-bar">
+        <div className="metric-pill-group">
+          <button
+            type="button"
+            className={`metric-pill-btn ${metricMode === 'both' ? 'active' : ''}`}
+            onClick={() => onSelectMetric('both')}
+          >
+            Dual View
+          </button>
+          <button
+            type="button"
+            className={`metric-pill-btn ${metricMode === 'physical' ? 'active' : ''}`}
+            onClick={() => onSelectMetric('physical')}
+          >
+            Physical %
+          </button>
+          <button
+            type="button"
+            className={`metric-pill-btn ${metricMode === 'financial' ? 'active' : ''}`}
+            onClick={() => onSelectMetric('financial')}
+          >
+            Financial %
+          </button>
+        </div>
+
+        <div className="sort-select-wrap">
+          <ArrowUpDown size={12} />
+          <span>Sort:</span>
+          <select
+            className="sort-select"
+            value={sortBy}
+            onChange={(e) => onSelectSort(e.target.value as any)}
+            aria-label="Sort states by"
+          >
+            <option value="progress">Highest progress</option>
+            <option value="financial">Highest fund absorption</option>
+            <option value="delayed">High risk / delayed</option>
+            <option value="name">Alphabetical</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Stats Summary Bar */}
+      <div className="analytics-meta-strip">
+        <span><b>5</b> States Assessed</span>
+        <span>Avg. Physical: <b>{avgPhysical}%</b></span>
+        <span>Avg. Financial: <b>{avgFinancial}%</b></span>
+        <small className="hint-pill">Click any state row to view district graph</small>
+      </div>
+
+      {/* Dynamic Animated State Bars */}
       <div className="state-chart-body">
-        {stateProgressData.map((st) => (
+        {sortedStates.map((st) => (
           <div
             key={st.name}
             className={`state-progress-row ${hoveredState === st.name ? 'hovered' : ''}`}
@@ -707,25 +1035,42 @@ function StateProgressChart({ onSelectState }: { onSelectState: (stateName: stri
           >
             <div className="state-row-info">
               <strong>{st.name}</strong>
-              <span>{st.totalWorks.toLocaleString('en-IN')} works · ₹{st.spentCrore} Cr / ₹{st.sanctionedCrore} Cr</span>
+              <span>
+                {st.totalWorks.toLocaleString('en-IN')} works · ₹{st.spentCrore} Cr / ₹{st.sanctionedCrore} Cr
+              </span>
             </div>
+
             <div className="state-bars-wrap">
               <div className="dual-track">
+                {/* Animated physical bar */}
                 <div
                   className="bar physical-bar"
-                  style={{ width: `${st.progress}%` }}
+                  style={{
+                    width: `${st.currentProgress}%`,
+                    opacity: metricMode === 'financial' ? 0.4 : 1,
+                  }}
                 >
-                  <span className="bar-label">{st.progress}% physical</span>
+                  <span className="bar-label">{st.currentProgress}% physical</span>
                 </div>
-                <div
-                  className="financial-marker"
-                  style={{ left: `${st.financialProgress}%` }}
-                  title={`Financial absorption: ${st.financialProgress}%`}
-                />
+
+                {/* Animated financial absorption marker */}
+                {metricMode !== 'physical' && (
+                  <div
+                    className="financial-marker"
+                    style={{ left: `${st.currentFinancial}%` }}
+                    title={`Financial absorption in ${selectedMonth}: ${st.currentFinancial}%`}
+                  />
+                )}
               </div>
             </div>
-            <div className="state-row-action">
-              <span className="drilldown-badge">Districts <ChevronRight size={13} /></span>
+
+            <div className="state-row-action" style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+              {st.momDelta !== null && st.momDelta > 0 && (
+                <span className="delta-tag pos" title={`Progress change since previous month`}>
+                  +{st.momDelta}%
+                </span>
+              )}
+              <span className="drilldown-badge">Districts <ChevronRight size={12} /></span>
             </div>
           </div>
         ))}
@@ -734,7 +1079,7 @@ function StateProgressChart({ onSelectState }: { onSelectState: (stateName: stri
       <div className="analytics-legend">
         <span><i className="legend-box physical" /> Physical Progress (%)</span>
         <span><i className="legend-line financial" /> Financial Absorption Marker</span>
-        <span className="milestone-text">Click state row to open district graph</span>
+        <span className="milestone-text">Interactive timeline updates bars dynamically</span>
       </div>
     </div>
   )
@@ -742,10 +1087,18 @@ function StateProgressChart({ onSelectState }: { onSelectState: (stateName: stri
 
 function DistrictProgressChart({
   stateName,
+  selectedMonth,
+  onSelectMonth,
+  isPlaying,
+  onTogglePlay,
   onBack,
   onSelectState,
 }: {
   stateName: string
+  selectedMonth: TimelineMonth
+  onSelectMonth: (m: TimelineMonth) => void
+  isPlaying: boolean
+  onTogglePlay: () => void
   onBack: () => void
   onSelectState: (name: string) => void
 }) {
@@ -753,7 +1106,42 @@ function DistrictProgressChart({
     return stateProgressData.find(s => s.name === stateName) || stateProgressData[0]
   }, [stateName])
 
-  const [activeDistrict, setActiveDistrict] = useState<DistrictProgress | null>(null)
+  const [activeDistrictName, setActiveDistrictName] = useState<string | null>(null)
+
+  // Calculate dynamic month values for each district
+  const districtsWithMonthData = useMemo(() => {
+    return stateData.districts.map(dist => {
+      const monthRecord = dist.history.find(h => h.month === selectedMonth) ?? {
+        progress: dist.progress,
+        financialProgress: dist.financialProgress,
+      }
+      const prevIdx = timelineMonths.indexOf(selectedMonth) - 1
+      const prevRecord = prevIdx >= 0 ? dist.history.find(h => h.month === timelineMonths[prevIdx]) : null
+      const momDelta = prevRecord ? monthRecord.progress - prevRecord.progress : null
+
+      return {
+        ...dist,
+        currentProgress: monthRecord.progress,
+        currentFinancial: monthRecord.financialProgress,
+        momDelta,
+      }
+    })
+  }, [stateData, selectedMonth])
+
+  const activeDistrict = useMemo(() => {
+    if (!activeDistrictName) return districtsWithMonthData[0] ?? null
+    return districtsWithMonthData.find(d => d.name === activeDistrictName) ?? districtsWithMonthData[0] ?? null
+  }, [activeDistrictName, districtsWithMonthData])
+
+  const stateMonthProgress = useMemo(() => {
+    const hist = stateData.history.find(h => h.month === selectedMonth)
+    return hist ? hist.progress : stateData.progress
+  }, [stateData, selectedMonth])
+
+  const stateMonthFinancial = useMemo(() => {
+    const hist = stateData.history.find(h => h.month === selectedMonth)
+    return hist ? hist.financialProgress : stateData.financialProgress
+  }, [stateData, selectedMonth])
 
   return (
     <div className="analytics-chart-container">
@@ -776,6 +1164,38 @@ function DistrictProgressChart({
         </div>
       </div>
 
+      {/* Interactive Timeline Scrubber inside State */}
+      <div className="timeline-strip">
+        <div className="timeline-left">
+          <button
+            type="button"
+            className={`timeline-play-btn ${isPlaying ? 'playing' : ''}`}
+            onClick={onTogglePlay}
+            title={isPlaying ? 'Pause progression timeline' : 'Play progression timeline animation'}
+            aria-label={isPlaying ? 'Pause timeline' : 'Play timeline'}
+          >
+            {isPlaying ? <Pause size={13} /> : <Play size={13} style={{ marginLeft: 2 }} />}
+          </button>
+          <div className="timeline-label">
+            <span>Month:</span> <b>{selectedMonth} 2026</b>
+            {isPlaying && <small style={{ color: '#2e8f7a', fontWeight: 700 }}>(Playing…)</small>}
+          </div>
+        </div>
+
+        <div className="timeline-months-row" role="tablist" aria-label="Progression months">
+          {timelineMonths.map(m => (
+            <button
+              key={m}
+              type="button"
+              className={`month-step-btn ${m === selectedMonth ? 'active' : ''}`}
+              onClick={() => onSelectMonth(m)}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* State Overview Header */}
       <div className="district-summary-banner">
         <div>
@@ -783,12 +1203,12 @@ function DistrictProgressChart({
           <strong>{stateData.name}</strong>
         </div>
         <div>
-          <span>Physical Progress</span>
-          <strong className="text-green">{stateData.progress}% avg</strong>
+          <span>Physical Progress ({selectedMonth})</span>
+          <strong className="text-green">{stateMonthProgress}% avg</strong>
         </div>
         <div>
-          <span>Financial Absorption</span>
-          <strong className="text-blue">{stateData.financialProgress}%</strong>
+          <span>Financial Utilization ({selectedMonth})</span>
+          <strong className="text-blue">{stateMonthFinancial}%</strong>
         </div>
         <div>
           <span>Districts Mapped</span>
@@ -796,33 +1216,47 @@ function DistrictProgressChart({
         </div>
       </div>
 
-      {/* District Progress Graph: Grouped Bar/Column SVG Chart */}
+      {/* District Progress Graph: Animated Dynamic SVG Chart */}
       <div className="district-graph-wrap">
-        <svg viewBox="0 0 540 175" className="district-svg-chart" role="img" aria-label={`District progress chart for ${stateData.name}`}>
+        <svg
+          viewBox="0 0 540 175"
+          className="district-svg-chart"
+          role="img"
+          aria-label={`District progress chart for ${stateData.name} in ${selectedMonth}`}
+        >
           {/* Reference grid lines */}
           {[0, 25, 50, 75, 100].map(val => {
             const y = 142 - (val / 100) * 115
             return (
               <g key={val}>
-                <line x1="38" y1={y} x2="530" y2={y} className="grid-line" strokeDasharray={val === 50 || val === 75 ? '3 3' : undefined} />
-                <text x="30" y={y + 3} textAnchor="end" className="district-axis-text">{val}%</text>
+                <line
+                  x1="38"
+                  x2="530"
+                  y1={y}
+                  y2={y}
+                  className="grid-line"
+                  strokeDasharray={val === 50 || val === 75 ? '3 3' : undefined}
+                />
+                <text x="30" y={y + 3} textAnchor="end" className="district-axis-text">
+                  {val}%
+                </text>
               </g>
             )
           })}
 
-          {/* District Bars */}
-          {stateData.districts.map((dist, i) => {
-            const numDistricts = stateData.districts.length
+          {/* Dynamic Animated District Column Bars */}
+          {districtsWithMonthData.map((dist, i) => {
+            const numDistricts = districtsWithMonthData.length
             const slotWidth = (490 - 45) / numDistricts
             const barW = Math.max(12, Math.min(22, slotWidth * 0.35))
             const slotCenter = 45 + (i + 0.5) * slotWidth
             const physX = slotCenter - barW - 1
             const finX = slotCenter + 1
 
-            const physHeight = (dist.progress / 100) * 115
+            const physHeight = (dist.currentProgress / 100) * 115
             const physY = 142 - physHeight
 
-            const finHeight = (dist.financialProgress / 100) * 115
+            const finHeight = (dist.currentFinancial / 100) * 115
             const finY = 142 - finHeight
 
             const isHovered = activeDistrict?.name === dist.name
@@ -831,15 +1265,14 @@ function DistrictProgressChart({
               <g
                 key={dist.name}
                 className={`district-bar-group ${isHovered ? 'hovered' : ''}`}
-                onMouseEnter={() => setActiveDistrict(dist)}
-                onMouseLeave={() => setActiveDistrict(null)}
-                onClick={() => setActiveDistrict(dist)}
+                onMouseEnter={() => setActiveDistrictName(dist.name)}
+                onClick={() => setActiveDistrictName(dist.name)}
                 style={{ cursor: 'pointer' }}
                 role="button"
                 tabIndex={0}
-                aria-label={`${dist.name}: ${dist.progress}% progress, ${dist.financialProgress}% financial`}
+                aria-label={`${dist.name} (${selectedMonth}): ${dist.currentProgress}% physical, ${dist.currentFinancial}% financial`}
               >
-                {/* Physical Progress Bar */}
+                {/* Physical Progress Bar with animated transition */}
                 <rect
                   x={physX}
                   y={physY}
@@ -849,7 +1282,7 @@ function DistrictProgressChart({
                   className="bar-rect physical"
                 />
 
-                {/* Financial Progress Bar */}
+                {/* Financial Progress Bar with animated transition */}
                 <rect
                   x={finX}
                   y={finY}
@@ -865,10 +1298,11 @@ function DistrictProgressChart({
                   y="158"
                   textAnchor="middle"
                   className="district-axis-text"
+                  style={{ fontWeight: isHovered ? 800 : 500 }}
                 >
                   {dist.name.replace('Bengaluru', 'Blr').replace('Metropolitan', 'Metro')}
                 </text>
-                
+
                 {/* Physical value */}
                 <text
                   x={slotCenter}
@@ -876,7 +1310,7 @@ function DistrictProgressChart({
                   textAnchor="middle"
                   className="bar-val-text"
                 >
-                  {dist.progress}%
+                  {dist.currentProgress}%
                 </text>
               </g>
             )
@@ -888,14 +1322,34 @@ function DistrictProgressChart({
       {activeDistrict ? (
         <div className="district-detail-card">
           <div className="district-detail-head">
-            <strong>{activeDistrict.name}</strong>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <strong>{activeDistrict.name}</strong>
+              <small style={{ color: 'var(--muted)', fontSize: 10 }}>({selectedMonth} 2026 Standing)</small>
+              {activeDistrict.momDelta !== null && activeDistrict.momDelta > 0 && (
+                <span className="delta-tag pos">+{activeDistrict.momDelta}% this month</span>
+              )}
+            </div>
             <span className="signal-pill">{activeDistrict.primarySignal}</span>
           </div>
           <div className="district-metrics-row">
-            <div><span>Physical Progress</span><b>{activeDistrict.progress}%</b></div>
-            <div><span>Financial Utilization</span><b>{activeDistrict.financialProgress}% (₹{activeDistrict.spentLakh}L / ₹{activeDistrict.sanctionedLakh}L)</b></div>
-            <div><span>Active Works</span><b>{activeDistrict.totalWorks} works</b></div>
-            <div><span>Delayed Works</span><b className="text-amber">{activeDistrict.delayedWorks} delayed</b></div>
+            <div>
+              <span>Physical Progress ({selectedMonth})</span>
+              <b className="text-green">{activeDistrict.currentProgress}%</b>
+            </div>
+            <div>
+              <span>Financial Utilization ({selectedMonth})</span>
+              <b className="text-blue">
+                {activeDistrict.currentFinancial}% (₹{activeDistrict.spentLakh}L / ₹{activeDistrict.sanctionedLakh}L)
+              </b>
+            </div>
+            <div>
+              <span>Active Works</span>
+              <b>{activeDistrict.totalWorks} works</b>
+            </div>
+            <div>
+              <span>Delayed Works</span>
+              <b className="text-amber">{activeDistrict.delayedWorks} delayed</b>
+            </div>
           </div>
         </div>
       ) : (
