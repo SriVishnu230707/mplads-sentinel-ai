@@ -12,6 +12,7 @@ interface GisMapProps {
   isDark?: boolean
   compact?: boolean
   height?: string
+  onClick?: () => void
 }
 
 const STATE_COORDINATES: Record<string, [number, number, number]> = {
@@ -31,6 +32,7 @@ export function GisMap({
   isDark = false,
   compact = false,
   height = '100%',
+  onClick,
 }: GisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -39,6 +41,8 @@ export function GisMap({
   const markersLayerRef = useRef<L.LayerGroup | null>(null)
   const onSelectRef = useRef(onSelect)
   onSelectRef.current = onSelect
+  const onClickRef = useRef(onClick)
+  onClickRef.current = onClick
 
   // Initialize Map
   useEffect(() => {
@@ -51,6 +55,14 @@ export function GisMap({
       zoomControl: !compact,
       attributionControl: !compact,
       scrollWheelZoom: !compact,
+      dragging: !compact,
+    })
+
+    // Listen for Leaflet click in compact mode or when onClick is passed
+    map.on('click', () => {
+      if (onClickRef.current) {
+        onClickRef.current()
+      }
     })
 
     const markersGroup = L.layerGroup().addTo(map)
@@ -218,20 +230,30 @@ export function GisMap({
       })
 
       marker.on('click', () => {
-        // Also fire selection on marker click
+        // Fire selection on marker click
         onSelectRef.current(project)
+        if (compact && onClickRef.current) {
+          onClickRef.current()
+        }
       })
 
       markersGroup.addLayer(marker)
       validMarkers.push(marker)
     })
-  }, [projects])
+  }, [projects, compact])
 
   return (
     <div
       ref={containerRef}
       className={`gis-map-viewport ${compact ? 'compact' : ''} ${mode}`}
-      style={{ width: '100%', height, minHeight: compact ? '220px' : '520px' }}
+      style={{
+        width: '100%',
+        height,
+        minHeight: compact ? '220px' : '520px',
+        cursor: compact || onClick ? 'pointer' : undefined,
+      }}
+      onClick={compact && onClick ? () => onClick() : undefined}
+      title={compact ? 'Click to open full map intelligence' : undefined}
     />
   )
 }

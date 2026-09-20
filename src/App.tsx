@@ -7,7 +7,7 @@ import {
   Network, PanelLeftClose, Search, Settings, ShieldCheck, Sparkles, Sun,
   Users, X, Zap, LogOut, Eye, EyeOff, UserRound, Mail, MapPin, Fingerprint,
   KeyRound, BadgeCheck, Globe2, BriefcaseBusiness, Printer, FileText, CheckCircle2, ArrowRight,
-  Play, Pause, TrendingUp, SlidersHorizontal, ArrowUpDown,
+  Play, Pause, TrendingUp, SlidersHorizontal, ArrowUpDown, Maximize2,
 } from 'lucide-react'
 import {
   activity, states, stateProgressData, trend, timelineMonths,
@@ -647,10 +647,45 @@ function Overview({
           />
         )}
       </div>
-      <div className="card map-card">
-        <CardHeader title="National risk distribution" subtitle="Live satellite & project-risk concentration" action="Open full map" onAction={onNavigateMap} />
-        <GisMap projects={projects} onSelect={onSelect} mode="satellite" compact isDark={isDark} height="230px" />
-        <div className="map-legend"><span><i className="legend critical" />Critical</span><span><i className="legend high" />High</span><span><i className="legend moderate" />Moderate</span><span><i className="legend low" />Low</span></div>
+      <div
+        className="card map-card interactive-map-card"
+        onClick={onNavigateMap}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onNavigateMap()
+          }
+        }}
+        title="Click to open full map intelligence"
+      >
+        <CardHeader
+          title="National risk distribution"
+          subtitle="Live satellite & project-risk concentration · Click map to expand"
+          action="Open full map"
+          onAction={onNavigateMap}
+        />
+        <div className="compact-map-wrapper" style={{ position: 'relative', cursor: 'pointer' }}>
+          <GisMap
+            projects={projects}
+            onSelect={onSelect}
+            mode="satellite"
+            compact
+            isDark={isDark}
+            height="230px"
+            onClick={onNavigateMap}
+          />
+          <div className="map-overlay-chip">
+            <Maximize2 size={12} /> Click to open full map
+          </div>
+        </div>
+        <div className="map-legend">
+          <span><i className="legend critical" />Critical</span>
+          <span><i className="legend high" />High</span>
+          <span><i className="legend moderate" />Moderate</span>
+          <span><i className="legend low" />Low</span>
+        </div>
       </div>
     </section>
 
