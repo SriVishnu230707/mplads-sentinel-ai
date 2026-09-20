@@ -285,7 +285,19 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
 
           {scanMessage && <div className="system-message"><ShieldCheck size={16}/>{scanMessage}<button onClick={() => setScanMessage('')}><X size={15}/></button></div>}
 
-          {page === 'overview' && <Overview projects={filtered} summary={summary} onSelect={setSelected} isDark={dark} onNavigateMap={() => setPage('map')} />}
+          {page === 'overview' && (
+            <Overview
+              projects={filtered}
+              summary={summary}
+              onSelect={setSelected}
+              isDark={dark}
+              onNavigateMap={() => setPage('map')}
+              onNavigateAlerts={() => setPage('alerts')}
+              onNavigateProjects={() => setPage('projects')}
+              onNavigateReports={() => setPage('reports')}
+              onNavigateCases={() => setPage('cases')}
+            />
+          )}
           {page === 'alerts' && <AlertsView projects={filtered} onSelect={setSelected} onRunScan={runScan} scanning={scanning} />}
           {page === 'projects' && <ProjectsView projects={filtered} onSelect={setSelected} />}
           {page === 'map' && <MapView projects={filtered} onSelect={setSelected} isDark={dark} />}
@@ -304,21 +316,44 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
 
 // pageDescriptions moved above DashboardApp for correct declaration order
 
-function Overview({ projects, summary, onSelect, isDark, onNavigateMap }: { projects: Project[]; summary: ApiDashboardSummary | null; onSelect: (p: Project) => void; isDark: boolean; onNavigateMap: () => void }) {
+function Overview({
+  projects,
+  summary,
+  onSelect,
+  isDark,
+  onNavigateMap,
+  onNavigateAlerts,
+  onNavigateProjects,
+  onNavigateReports,
+  onNavigateCases,
+}: {
+  projects: Project[]
+  summary: ApiDashboardSummary | null
+  onSelect: (p: Project) => void
+  isDark: boolean
+  onNavigateMap: () => void
+  onNavigateAlerts: () => void
+  onNavigateProjects?: () => void
+  onNavigateReports?: () => void
+  onNavigateCases?: () => void
+}) {
   const utilization = summary && summary.sanctioned_lakh > 0
     ? `${Math.round(summary.expenditure_lakh / summary.sanctioned_lakh * 100)}%`
     : '—'
+
+  const priorityProjects = useMemo(() => [...projects].sort((a, b) => b.risk - a.risk).slice(0, 4), [projects])
+
   return <>
     <section className="metrics-grid">
-      <Metric icon={FolderKanban} label="Active works" value={summary ? summary.active_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.delayed_works) : '—'} note="delayed works in your scope" color="teal" />
-      <Metric icon={IndianRupee} label="Expenditure monitored" value={summary ? formatCrore(summary.expenditure_lakh / 100) : '—'} delta={utilization} note={summary ? `of ${formatCrore(summary.sanctioned_lakh / 100)} sanctioned` : 'loading authorized portfolio'} color="blue" />
-      <Metric icon={AlertTriangle} label="High-risk works" value={summary ? summary.high_risk_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.open_alerts) : '—'} note="open alerts requiring review" color="red" />
-      <Metric icon={Clock3} label="Delayed works" value={summary ? summary.delayed_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.active_works) : '—'} note="active works assessed" color="amber" />
+      <Metric icon={FolderKanban} label="Active works" value={summary ? summary.active_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.delayed_works) : '—'} note="delayed works in your scope" color="teal" onClick={onNavigateProjects} />
+      <Metric icon={IndianRupee} label="Expenditure monitored" value={summary ? formatCrore(summary.expenditure_lakh / 100) : '—'} delta={utilization} note={summary ? `of ${formatCrore(summary.sanctioned_lakh / 100)} sanctioned` : 'loading authorized portfolio'} color="blue" onClick={onNavigateProjects} />
+      <Metric icon={AlertTriangle} label="High-risk works" value={summary ? summary.high_risk_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.open_alerts) : '—'} note="open alerts requiring review" color="red" onClick={onNavigateAlerts} />
+      <Metric icon={Clock3} label="Delayed works" value={summary ? summary.delayed_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.active_works) : '—'} note="active works assessed" color="amber" onClick={onNavigateProjects} />
     </section>
 
     <section className="dashboard-grid">
       <div className="card risk-trend-card">
-        <CardHeader title="Risk intelligence trend" subtitle="Detected vs. resolved signals · last 6 months" action="View analytics" />
+        <CardHeader title="Risk intelligence trend" subtitle="Detected vs. resolved signals · last 6 months" action="View analytics" onAction={onNavigateReports} />
         <TrendChart />
       </div>
       <div className="card map-card">
@@ -330,20 +365,25 @@ function Overview({ projects, summary, onSelect, isDark, onNavigateMap }: { proj
 
     <section className="dashboard-grid lower-grid">
       <div className="card alerts-card">
-        <CardHeader title="Priority alerts" subtitle="Ranked by risk, confidence and potential impact" action="View all 482" />
-        <ProjectTable projects={projects.slice(0, 4)} onSelect={onSelect} compact />
+        <CardHeader
+          title="Priority alerts"
+          subtitle="Ranked by risk, confidence and potential impact"
+          action={summary ? `View all ${summary.open_alerts}` : 'View all alerts'}
+          onAction={onNavigateAlerts}
+        />
+        <ProjectTable projects={priorityProjects} onSelect={onSelect} compact />
       </div>
       <div className="card activity-card">
         <CardHeader title="Live activity" subtitle="Latest actions across the platform" />
         <div className="activity-list">
           {activity.map(item => <div className="activity-item" key={item.title}><span className={`activity-icon ${item.tone}`}><Activity size={15} /></span><div><strong>{item.title}</strong><p>{item.meta}</p></div><time>{item.time}</time></div>)}
         </div>
-        <button className="text-button full">View complete audit activity <ChevronRight size={15} /></button>
+        <button className="text-button full" onClick={onNavigateCases}>View complete audit activity <ChevronRight size={15} /></button>
       </div>
     </section>
 
     <section className="card state-card">
-      <CardHeader title="State performance watch" subtitle="Relative risk based on active work portfolio" action="Compare all states" />
+      <CardHeader title="State performance watch" subtitle="Relative risk based on active work portfolio" action="Compare all states" onAction={onNavigateMap} />
       <div className="state-list">
         {states.map((state, i) => <div className="state-row" key={state.name}><span className="rank">{String(i + 1).padStart(2, '0')}</span><div className="state-name"><strong>{state.name}</strong><span>{state.projects.toLocaleString('en-IN')} active works</span></div><div className="bar-track"><span style={{ width: `${state.score}%` }} /></div><strong className="risk-number">{state.highRisk}</strong><span className="muted-label">high risk</span><ChevronRight size={17} /></div>)}
       </div>
@@ -351,8 +391,22 @@ function Overview({ projects, summary, onSelect, isDark, onNavigateMap }: { proj
   </>
 }
 
-function Metric({ icon: Icon, label, value, delta, note, color }: { icon: typeof Gauge; label: string; value: string; delta: string; note: string; color: string }) {
-  return <article className="metric card"><div className={`metric-icon ${color}`}><Icon size={20} /></div><div className="metric-top"><span>{label}</span><CircleHelp size={14} /></div><div className="metric-value">{value}</div><div className="metric-foot"><span className="delta neutral">{delta}</span><span>{note}</span></div></article>
+function Metric({ icon: Icon, label, value, delta, note, color, onClick }: { icon: typeof Gauge; label: string; value: string; delta: string; note: string; color: string; onClick?: () => void }) {
+  return (
+    <article
+      className={`metric card ${onClick ? 'interactive' : ''}`}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      style={onClick ? { cursor: 'pointer' } : undefined}
+    >
+      <div className={`metric-icon ${color}`}><Icon size={20} /></div>
+      <div className="metric-top"><span>{label}</span><CircleHelp size={14} /></div>
+      <div className="metric-value">{value}</div>
+      <div className="metric-foot"><span className="delta neutral">{delta}</span><span>{note}</span></div>
+    </article>
+  )
 }
 
 function CardHeader({ title, subtitle, action, onAction }: { title: string; subtitle: string; action?: string; onAction?: () => void }) {
@@ -367,11 +421,99 @@ function TrendChart() {
 }
 
 function ProjectTable({ projects, onSelect, compact = false }: { projects: Project[]; onSelect: (p: Project) => void; compact?: boolean }) {
-  return <div className="table-scroll"><table><thead><tr><th>Work</th><th>Risk</th>{!compact && <th>Sanctioned</th>}<th>Progress</th><th>Primary signal</th><th /></tr></thead><tbody>{projects.map(p => <tr key={p.id} onClick={() => onSelect(p)}><td><strong>{p.title}</strong><span>{p.id} · {p.location}</span></td><td><span className={riskClass(p.level)}><i />{p.risk} {p.level}</span></td>{!compact && <td><strong>{formatCrore(p.sanctioned / 100)}</strong><span>{formatCrore(p.spent / 100)} spent</span></td>}<td><div className="progress-cell"><div><span style={{ width: `${p.progress}%` }}/></div><b>{p.progress}%</b></div></td><td className="issue-cell">{p.issue}</td><td><button className="row-action" aria-label={`Open ${p.title}`}><ChevronRight size={17}/></button></td></tr>)}</tbody></table></div>
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Work</th>
+            <th>Risk</th>
+            {!compact && <th>Sanctioned</th>}
+            <th>Progress</th>
+            <th>Primary signal</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {projects.map(p => (
+            <tr
+              key={p.id}
+              onClick={() => onSelect(p)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelect(p)
+                }
+              }}
+              tabIndex={0}
+              role="button"
+              aria-label={`Open ${p.title}`}
+            >
+              <td>
+                <strong>{p.title}</strong>
+                <span>{p.id} · {p.location}</span>
+              </td>
+              <td>
+                <span className={riskClass(p.level)}><i />{p.risk} {p.level}</span>
+              </td>
+              {!compact && (
+                <td>
+                  <strong>{formatCrore(p.sanctioned / 100)}</strong>
+                  <span>{formatCrore(p.spent / 100)} spent</span>
+                </td>
+              )}
+              <td>
+                <div className="progress-cell">
+                  <div><span style={{ width: `${p.progress}%` }}/></div>
+                  <b>{p.progress}%</b>
+                </div>
+              </td>
+              <td className="issue-cell">{p.issue}</td>
+              <td>
+                <button
+                  type="button"
+                  className="row-action"
+                  aria-label={`Open details for ${p.title}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSelect(p)
+                  }}
+                >
+                  <ChevronRight size={17}/>
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
-function Toolbar({ searchPlaceholder = 'Search this view…' }: { searchPlaceholder?: string }) {
-  return <div className="toolbar"><div className="local-search"><Search size={17}/><input placeholder={searchPlaceholder}/></div><button className="button secondary"><Filter size={16}/> Filters <span className="filter-count">3</span></button><button className="button secondary"><CalendarDays size={16}/> Last 30 days</button></div>
+function Toolbar({
+  searchPlaceholder = 'Search this view…',
+  search = '',
+  onSearchChange,
+}: {
+  searchPlaceholder?: string
+  search?: string
+  onSearchChange?: (val: string) => void
+}) {
+  return (
+    <div className="toolbar">
+      <div className="local-search">
+        <Search size={17} />
+        <input
+          placeholder={searchPlaceholder}
+          value={search}
+          onChange={e => onSearchChange?.(e.target.value)}
+          aria-label={searchPlaceholder}
+        />
+      </div>
+      <button className="button secondary"><Filter size={16}/> Filters <span className="filter-count">3</span></button>
+      <button className="button secondary"><CalendarDays size={16}/> Last 30 days</button>
+    </div>
+  )
 }
 
 function AlertsView({
@@ -386,16 +528,24 @@ function AlertsView({
   scanning?: boolean
 }) {
   const [filter, setFilter] = useState<'all' | 'critical' | 'high' | 'assigned'>('all')
+  const [localSearch, setLocalSearch] = useState('')
 
-  const criticalCount = useMemo(() => projects.filter(p => p.level === 'Critical').length, [projects])
-  const highCount = useMemo(() => projects.filter(p => p.level === 'High').length, [projects])
+  const sortedProjects = useMemo(() => [...projects].sort((a, b) => b.risk - a.risk), [projects])
+  const criticalCount = useMemo(() => sortedProjects.filter(p => p.level === 'Critical').length, [sortedProjects])
+  const highCount = useMemo(() => sortedProjects.filter(p => p.level === 'High').length, [sortedProjects])
 
   const filteredProjects = useMemo(() => {
-    if (filter === 'critical') return projects.filter(p => p.level === 'Critical')
-    if (filter === 'high') return projects.filter(p => p.level === 'High')
-    if (filter === 'assigned') return projects.slice(0, 2)
-    return projects
-  }, [projects, filter])
+    let list = sortedProjects
+    if (filter === 'critical') list = list.filter(p => p.level === 'Critical')
+    else if (filter === 'high') list = list.filter(p => p.level === 'High')
+    else if (filter === 'assigned') list = list.slice(0, 2)
+
+    if (localSearch.trim()) {
+      const q = localSearch.trim().toLowerCase()
+      list = list.filter(p => `${p.id} ${p.title} ${p.location} ${p.agency} ${p.issue}`.toLowerCase().includes(q))
+    }
+    return list
+  }, [sortedProjects, filter, localSearch])
 
   return (
     <>
@@ -421,7 +571,11 @@ function AlertsView({
         )}
       </div>
       <section className="card data-card">
-        <Toolbar searchPlaceholder="Search alert, work or district…" />
+        <Toolbar
+          searchPlaceholder="Search alert, work or district…"
+          search={localSearch}
+          onSearchChange={setLocalSearch}
+        />
         <ProjectTable projects={filteredProjects} onSelect={onSelect} />
       </section>
     </>
@@ -429,7 +583,31 @@ function AlertsView({
 }
 
 function ProjectsView({ projects, onSelect }: { projects: Project[]; onSelect: (p: Project) => void }) {
-  return <><section className="mini-stats"><div><span>All works</span><strong>18,420</strong></div><div><span>In progress</span><strong>11,864</strong></div><div><span>Delayed</span><strong>2,184</strong></div><div><span>Completed this FY</span><strong>4,372</strong></div></section><section className="card data-card"><Toolbar searchPlaceholder="Search work ID, title or agency…"/><ProjectTable projects={projects} onSelect={onSelect}/></section></>
+  const [localSearch, setLocalSearch] = useState('')
+  const filtered = useMemo(() => {
+    if (!localSearch.trim()) return projects
+    const q = localSearch.trim().toLowerCase()
+    return projects.filter(p => `${p.id} ${p.title} ${p.location} ${p.agency}`.toLowerCase().includes(q))
+  }, [projects, localSearch])
+
+  return (
+    <>
+      <section className="mini-stats">
+        <div><span>All works</span><strong>18,420</strong></div>
+        <div><span>In progress</span><strong>11,864</strong></div>
+        <div><span>Delayed</span><strong>2,184</strong></div>
+        <div><span>Completed this FY</span><strong>4,372</strong></div>
+      </section>
+      <section className="card data-card">
+        <Toolbar
+          searchPlaceholder="Search work ID, title or agency…"
+          search={localSearch}
+          onSearchChange={setLocalSearch}
+        />
+        <ProjectTable projects={filtered} onSelect={onSelect}/>
+      </section>
+    </>
+  )
 }
 
 function MapView({ projects, onSelect, isDark }: { projects: Project[]; onSelect: (p: Project) => void; isDark: boolean }) {
