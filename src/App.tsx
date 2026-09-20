@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, AlertTriangle, BarChart3, Bell,
-  Building2, CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp,
+  Building2, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp,
   ClipboardCheck, Clock3, Download, FileSearch, Filter, FolderKanban, Gauge,
   IndianRupee, LayoutDashboard, LockKeyhole, Map, Menu, Moon,
   Network, PanelLeftClose, Search, Settings, ShieldCheck, Sparkles, Sun,
@@ -93,6 +93,28 @@ const pageDescriptions: Record<Page, string> = {
   profile: 'Review your official identity, jurisdiction and session security.',
 }
 
+const pageNames: Record<Page, string> = {
+  overview: 'Command centre',
+  alerts: 'Risk alerts',
+  projects: 'Works & projects',
+  map: 'Map intelligence',
+  cases: 'Investigations',
+  reports: 'Reports',
+  admin: 'Administration',
+  profile: 'Profile',
+}
+
+type NavigationState = {
+  page: Page
+  projectId: string | null
+}
+
+const getInitialPage = (): Page => {
+  const hash = window.location.hash.replace('#', '') as Page
+  const validPages: Page[] = ['overview', 'alerts', 'projects', 'map', 'cases', 'reports', 'admin', 'profile']
+  return validPages.includes(hash) ? hash : 'overview'
+}
+
 const roleLabels: Record<ApiUser['role'], Role> = {
   ministry: 'Ministry National Supervisor', state: 'State Nodal Authority', district: 'District Authority',
   auditor: 'Auditor / Investigator', field_officer: 'District Authority', mp: 'Ministry National Supervisor',
@@ -110,7 +132,13 @@ const toProject = (p: ApiProject): Project => ({
 })
 
 function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void }) {
-  const [page, setPage] = useState<Page>('overview')
+  const [history, setHistory] = useState<NavigationState[]>([
+    { page: getInitialPage(), projectId: null },
+  ])
+  const [historyIndex, setHistoryIndex] = useState(0)
+
+  const currentState = history[historyIndex] ?? { page: 'overview', projectId: null }
+  const page = currentState.page
   const role = roleLabels[user.role]
   const [projectData, setProjectData] = useState<Project[]>([])
   const [summary, setSummary] = useState<ApiDashboardSummary | null>(null)
@@ -126,6 +154,124 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Project | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+
+  const navigateToPage = (nextPage: Page) => {
+    if (nextPage === page && !selected) return
+    setSelected(null)
+    setHistory(prev => [
+      ...prev.slice(0, historyIndex + 1),
+      { page: nextPage, projectId: null },
+    ])
+    setHistoryIndex(prev => prev + 1)
+    window.history.pushState({ page: nextPage, projectId: null }, '', `#${nextPage}`)
+  }
+  const setPage = navigateToPage
+
+  const handleSelectProject = (project: Project | null) => {
+    setSelected(project)
+    const newProjectId = project ? project.id : null
+    if (newProjectId === currentState.projectId) return
+    setHistory(prev => [
+      ...prev.slice(0, historyIndex + 1),
+      { page, projectId: newProjectId },
+    ])
+    setHistoryIndex(prev => prev + 1)
+  }
+
+  const goBack = () => {
+    if (historyIndex > 0) {
+      const prevIndex = historyIndex - 1
+      const prevState = history[prevIndex]
+      setHistoryIndex(prevIndex)
+      if (prevState.projectId) {
+        const found = projectData.find(p => p.id === prevState.projectId)
+        setSelected(found ?? null)
+      } else {
+        setSelected(null)
+      }
+      window.history.pushState(prevState, '', `#${prevState.page}`)
+    }
+  }
+
+  const goForward = () => {
+    if (historyIndex < history.length - 1) {
+      const nextIndex = historyIndex + 1
+      const nextState = history[nextIndex]
+      setHistoryIndex(nextIndex)
+      if (nextState.projectId) {
+        const found = projectData.find(p => p.id === nextState.projectId)
+        setSelected(found ?? null)
+      } else {
+        setSelected(null)
+      }
+      window.history.pushState(nextState, '', `#${nextState.page}`)
+    }
+  }
+
+  const canGoBack = historyIndex > 0
+  const canGoForward = historyIndex < history.length - 1
+
+  const getNavLabel = (state?: NavigationState) => {
+    if (!state) return ''
+    const title = pageNames[state.page] ?? state.page
+    if (state.projectId) {
+      return `${title} · ${state.projectId}`
+    }
+    return title
+  }
+
+  // Restore project selection if projectData loads after history state set
+  useEffect(() => {
+    if (currentState.projectId && !selected && projectData.length > 0) {
+      const found = projectData.find(p => p.id === currentState.projectId)
+      if (found) setSelected(found)
+    }
+  }, [currentState.projectId, projectData, selected])
+
+  // Sync browser popstate (browser back/forward buttons)
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      if (e.state && typeof e.state.page === 'string') {
+        const targetPage = e.state.page as Page
+        const targetProjectId = e.state.projectId ?? null
+        setHistory(prev => {
+          const idx = prev.findIndex(item => item.page === targetPage && item.projectId === targetProjectId)
+          if (idx !== -1) {
+            setHistoryIndex(idx)
+            return prev
+          }
+          setHistoryIndex(prev.length)
+          return [...prev, { page: targetPage, projectId: targetProjectId }]
+        })
+        if (targetProjectId) {
+          const found = projectData.find(p => p.id === targetProjectId)
+          setSelected(found ?? null)
+        } else {
+          setSelected(null)
+        }
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [projectData])
+
+  // Keyboard navigation shortcuts: Alt+ArrowLeft (back) and Alt+ArrowRight (forward)
+  useEffect(() => {
+    const handleNavShortcuts = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault()
+        goBack()
+      } else if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault()
+        goForward()
+      }
+    }
+    document.addEventListener('keydown', handleNavShortcuts)
+    return () => document.removeEventListener('keydown', handleNavShortcuts)
+  }, [historyIndex, history.length, projectData])
 
   // Sync dark mode with <html> so body/viewport background matches
   useEffect(() => {
@@ -249,11 +395,35 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
 
       <main className={`main ${collapsed ? 'main-wide' : ''}`}>
         <header className="topbar">
-          <button className="icon-button mobile-toggle" onClick={() => setMobileMenu(true)} aria-label="Open navigation"><Menu size={21} /></button>
-          <div className="global-search">
-            <Search size={18} />
-            <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search work ID, district, agency or vendor…" aria-label="Global search" />
-            <kbd>⌘ K</kbd>
+          <div className="topbar-left">
+            <button className="icon-button mobile-toggle" onClick={() => setMobileMenu(true)} aria-label="Open navigation"><Menu size={21} /></button>
+            <div className="nav-history-cluster" role="group" aria-label="Navigation history">
+              <button
+                type="button"
+                className="icon-button nav-history-btn"
+                onClick={goBack}
+                disabled={!canGoBack}
+                aria-label="Previous page (Alt + Left Arrow)"
+                title={canGoBack ? `Previous: ${getNavLabel(history[historyIndex - 1])} (Alt + ←)` : 'No previous history'}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                type="button"
+                className="icon-button nav-history-btn"
+                onClick={goForward}
+                disabled={!canGoForward}
+                aria-label="Next page (Alt + Right Arrow)"
+                title={canGoForward ? `Next: ${getNavLabel(history[historyIndex + 1])} (Alt + →)` : 'No forward history'}
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+            <div className="global-search">
+              <Search size={18} />
+              <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search work ID, district, agency or vendor…" aria-label="Global search" />
+              <kbd>⌘ K</kbd>
+            </div>
           </div>
           <div className="top-actions">
             <button className="icon-button" onClick={() => setDark(v => !v)} aria-label={`Switch to ${dark ? 'light' : 'dark'} mode`} aria-pressed={dark}>{dark ? <Sun size={19} /> : <Moon size={19} />}</button>
@@ -289,7 +459,7 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
             <Overview
               projects={filtered}
               summary={summary}
-              onSelect={setSelected}
+              onSelect={handleSelectProject}
               isDark={dark}
               onNavigateMap={() => setPage('map')}
               onNavigateAlerts={() => setPage('alerts')}
@@ -298,17 +468,17 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
               onNavigateCases={() => setPage('cases')}
             />
           )}
-          {page === 'alerts' && <AlertsView projects={filtered} onSelect={setSelected} onRunScan={runScan} scanning={scanning} />}
-          {page === 'projects' && <ProjectsView projects={filtered} onSelect={setSelected} />}
-          {page === 'map' && <MapView projects={filtered} onSelect={setSelected} isDark={dark} />}
-          {page === 'cases' && <CasesView projects={filtered} onSelectProject={setSelected} />}
+          {page === 'alerts' && <AlertsView projects={filtered} onSelect={handleSelectProject} onRunScan={runScan} scanning={scanning} />}
+          {page === 'projects' && <ProjectsView projects={filtered} onSelect={handleSelectProject} />}
+          {page === 'map' && <MapView projects={filtered} onSelect={handleSelectProject} isDark={dark} />}
+          {page === 'cases' && <CasesView projects={filtered} onSelectProject={handleSelectProject} />}
           {page === 'reports' && <ReportsView projects={projectData} summary={summary} user={user} role={role} />}
           {page === 'admin' && <AdminView />}
           {page === 'profile' && <ProfileView user={user} role={role} onLogout={onLogout} />}
         </div>
       </main>
 
-      {selected && <ProjectDrawer project={selected} onClose={() => setSelected(null)} />}
+      {selected && <ProjectDrawer project={selected} onClose={() => handleSelectProject(null)} />}
       {scanResult && <ScanResultModal result={scanResult} onClose={() => setScanResult(null)} onNavigateAlerts={() => { setScanResult(null); setPage('alerts') }} />}
     </div>
   )
