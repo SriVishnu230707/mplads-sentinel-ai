@@ -195,3 +195,42 @@ class ScanResult(BaseModel):
     projects_scanned: int
     alerts_created: int
     scores_updated: int
+
+
+class OfficialCredentialsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    user_id: str
+    full_name: str
+    role: Role
+    pan_number: str | None = None
+    aadhaar_number: str | None = None
+    bank_name: str | None = None
+    bank_account_number: str | None = None
+    bank_ifsc: str | None = None
+    pfms_code: str | None = None
+    biometric_enrolled: bool = True
+    biometric_device_id: str | None = None
+    biometric_enrolled_at: datetime | None = None
+    is_unlocked: bool = False
+
+
+class UpdateCredentialsRequest(BaseModel):
+    pan_number: str | None = Field(default=None, pattern=r"^[A-Z]{5}[0-9]{4}[A-Z]$")
+    aadhaar_number: str | None = Field(default=None, pattern=r"^\d{12}$")
+    bank_name: str | None = Field(default=None, max_length=120)
+    bank_account_number: str | None = Field(default=None, min_length=8, max_length=30)
+    bank_ifsc: str | None = Field(default=None, pattern=r"^[A-Z]{4}0[A-Z0-9]{6}$")
+    pfms_code: str | None = Field(default=None, max_length=40)
+
+
+class BiometricVerifyRequest(BaseModel):
+    device_challenge: str | None = None
+    method: str = "fingerprint"
+
+
+class BiometricVerifyResponse(BaseModel):
+    status: str
+    verified_at: datetime
+    message: str
+    unlock_token: str
+    credentials: OfficialCredentialsOut

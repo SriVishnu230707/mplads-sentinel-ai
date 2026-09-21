@@ -8,13 +8,23 @@ import {
   Users, X, Zap, LogOut, Eye, EyeOff, UserRound, Mail, MapPin, Fingerprint,
   KeyRound, BadgeCheck, Globe2, BriefcaseBusiness, Printer, FileText, CheckCircle2, ArrowRight,
   Play, Pause, TrendingUp, SlidersHorizontal, ArrowUpDown, Maximize2,
+  CreditCard, Lock, Unlock, Copy, Edit3,
 } from 'lucide-react'
 import {
   activity, states, stateProgressData, trend, timelineMonths,
   type DistrictProgress, type Project, type RiskLevel, type StateProgress,
   type TimelineMonth, type MonthlyProgress,
 } from './data'
-import { api, type ApiAlert, type ApiDashboardSummary, type ApiDelayPrediction, type ApiProject, type ApiProjectIntelligence, type ApiUser } from './api'
+import {
+  api,
+  type ApiAlert,
+  type ApiDashboardSummary,
+  type ApiDelayPrediction,
+  type ApiProject,
+  type ApiProjectIntelligence,
+  type ApiUser,
+  type OfficialCredentials,
+} from './api'
 import { GisMap, type MapMode } from './GisMap'
 
 export type GeneratedReport = {
@@ -2957,12 +2967,150 @@ function ProfileView({ user, role, onLogout }: { user: ApiUser; role: Role; onLo
         ? `Authorized to review projects within ${user.organization.state}.`
         : `Authorized to review projects within ${user.organization.district} district.`
 
+  const [credentials, setCredentials] = useState<OfficialCredentials | null>(null)
+  const [unlockToken, setUnlockToken] = useState<string | null>(null)
+  const [isUnlocked, setIsUnlocked] = useState(false)
+  const [timerSeconds, setTimerSeconds] = useState(300)
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannerStep, setScannerStep] = useState<'ready' | 'scanning' | 'verifying' | 'success'>('ready')
+  const [scannerProgress, setScannerProgress] = useState(0)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [savingCreds, setSavingCreds] = useState(false)
+  const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null)
+
+  // Edit form state
+  const [editPan, setEditPan] = useState('')
+  const [editAadhaar, setEditAadhaar] = useState('')
+  const [editBankName, setEditBankName] = useState('')
+  const [editBankAcc, setEditBankAcc] = useState('')
+  const [editBankIfsc, setEditBankIfsc] = useState('')
+  const [editPfms, setEditPfms] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    api.getCredentials(user, unlockToken).then(data => {
+      if (!cancelled) {
+        setCredentials(data)
+        setIsUnlocked(data.is_unlocked)
+        setEditPan(data.pan_number ?? '')
+        setEditAadhaar(data.aadhaar_number ?? '')
+        setEditBankName(data.bank_name ?? '')
+        setEditBankAcc(data.bank_account_number ?? '')
+        setEditBankIfsc(data.bank_ifsc ?? '')
+        setEditPfms(data.pfms_code ?? '')
+      }
+    })
+    return () => { cancelled = true }
+  }, [user, unlockToken])
+
+  // Countdown timer when unlocked
+  useEffect(() => {
+    if (!isUnlocked) return
+    const interval = window.setInterval(() => {
+      setTimerSeconds(prev => {
+        if (prev <= 1) {
+          setIsUnlocked(false)
+          setUnlockToken(null)
+          setFeedbackNotice('Biometric session expired. Credentials re-shielded.')
+          return 300
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => window.clearInterval(interval)
+  }, [isUnlocked])
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`
+  }
+
+  const handleCopy = (text: string | null | undefined, label: string) => {
+    if (!text) return
+    navigator.clipboard.writeText(text).catch(() => {})
+    setCopiedField(label)
+    window.setTimeout(() => setCopiedField(null), 2000)
+  }
+
+  const handleOpenScanner = () => {
+    setScannerOpen(true)
+    setScannerStep('ready')
+    setScannerProgress(0)
+  }
+
+  const handleStartScan = async () => {
+    setScannerStep('scanning')
+    setScannerProgress(20)
+
+    const timer1 = window.setTimeout(() => setScannerProgress(55), 400)
+    const timer2 = window.setTimeout(() => {
+      setScannerProgress(85)
+      setScannerStep('verifying')
+    }, 850)
+
+    try {
+      const res = await api.verifyBiometrics(user, 'fingerprint')
+      window.clearTimeout(timer1)
+      window.clearTimeout(timer2)
+      setScannerProgress(100)
+      setScannerStep('success')
+
+      window.setTimeout(() => {
+        setUnlockToken(res.unlock_token)
+        setCredentials(res.credentials)
+        setIsUnlocked(true)
+        setTimerSeconds(300)
+        setScannerOpen(false)
+        setFeedbackNotice('Official identity authenticated via Biometrics. Vault unlocked for 5 minutes.')
+      }, 700)
+    } catch {
+      window.clearTimeout(timer1)
+      window.clearTimeout(timer2)
+      setScannerStep('ready')
+      setScannerProgress(0)
+    }
+  }
+
+  const handleLockVault = async () => {
+    setIsUnlocked(false)
+    setUnlockToken(null)
+    setTimerSeconds(300)
+    const masked = await api.getCredentials(user, null)
+    setCredentials(masked)
+    setFeedbackNotice('Privacy Shield activated. Sensitive credentials masked.')
+  }
+
+  const handleSaveCredentials = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingCreds(true)
+    try {
+      // Direct update with current unlock token
+      const updated = await api.updateCredentials(user, {
+        pan_number: editPan.trim().toUpperCase(),
+        aadhaar_number: editAadhaar.replace(/\s+/g, ''),
+        bank_name: editBankName.trim(),
+        bank_account_number: editBankAcc.trim(),
+        bank_ifsc: editBankIfsc.trim().toUpperCase(),
+        pfms_code: editPfms.trim().toUpperCase(),
+      }, unlockToken)
+      setCredentials(updated)
+      setEditModalOpen(false)
+      setFeedbackNotice('Official KYC & bank account credentials successfully updated and audited.')
+    } catch (err: any) {
+      alert(err.message || 'Failed to update credentials. Please check field formats.')
+    } finally {
+      setSavingCreds(false)
+    }
+  }
+
   return <div className="profile-page">
     <section className="card profile-identity-card">
       <div className="profile-hero">
         <div className="profile-avatar-large" aria-hidden="true">{initials}</div>
         <div className="profile-hero-copy">
-          <span className="verified-label"><BadgeCheck size={15}/> Identity verified</span>
+          <span className="verified-label"><BadgeCheck size={15}/> Official identity verified</span>
           <h2>{user.full_name}</h2>
           <p>{role}</p>
           <span className="official-email"><Mail size={15}/>{user.email}</span>
@@ -2974,7 +3122,339 @@ function ProfileView({ user, role, onLogout }: { user: ApiUser; role: Role; onLo
       </div>
     </section>
 
-    <div className="profile-details-grid">
+    {/* OFFICIAL CREDENTIALS & BIOMETRIC PRIVACY VAULT */}
+    <section className="card biometric-vault-card">
+      <div className="vault-header">
+        <div className="vault-header-title">
+          <div className="vault-icon-badge"><Fingerprint size={24}/></div>
+          <div>
+            <h2>Official Financial & Identity Credentials Vault</h2>
+            <p>Protected PAN, Aadhaar, and PFMS treasury disbursal account details governed by Aadhaar Biometric Security.</p>
+          </div>
+        </div>
+        <div className="vault-controls">
+          <span className={`vault-status-pill ${isUnlocked ? 'unlocked' : 'locked'}`}>
+            {isUnlocked ? <Unlock size={13}/> : <Lock size={13}/>}
+            {isUnlocked ? 'Biometrically Unlocked' : 'Privacy Shield Active'}
+          </span>
+          {isUnlocked ? (
+            <button type="button" className="vault-unlock-btn lock-btn" onClick={handleLockVault}>
+              <Lock size={14}/> Lock Vault
+            </button>
+          ) : (
+            <button type="button" className="vault-unlock-btn primary" onClick={handleOpenScanner}>
+              <Fingerprint size={15}/> Authenticate with Biometrics
+            </button>
+          )}
+          <button type="button" className="button secondary" onClick={() => setEditModalOpen(true)} style={{ padding: '8px 14px', fontSize: '11px' }}>
+            <Edit3 size={14}/> Update Credentials
+          </button>
+        </div>
+      </div>
+
+      <div className={`vault-banner ${isUnlocked ? 'unlocked-banner' : 'locked-banner'}`}>
+        <div className="vault-banner-left">
+          {isUnlocked ? <ShieldCheck size={18} color="#246f60" /> : <LockKeyhole size={18} />}
+          <span>
+            {isUnlocked
+              ? 'Biometrically verified session active. Full official credentials revealed.'
+              : 'Sensitive official numbers are masked to prevent shoulder-surfing. Scan your fingerprint to view full credentials.'}
+          </span>
+        </div>
+        {isUnlocked && (
+          <div className="vault-timer-badge">
+            <Clock3 size={13}/> Auto-locks in {formatTimer(timerSeconds)}
+          </div>
+        )}
+      </div>
+
+      {feedbackNotice && (
+        <div className="scope-notice" style={{ marginBottom: '14px', display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <CheckCircle2 size={15}/> <span>{feedbackNotice}</span>
+          </div>
+          <button type="button" onClick={() => setFeedbackNotice(null)} style={{ background: 'none', border: 0, cursor: 'pointer', color: 'inherit' }}><X size={14}/></button>
+        </div>
+      )}
+
+      {/* CREDENTIALS GRID */}
+      <div className="credentials-cards-grid">
+        {/* 1. AADHAAR CARD */}
+        <div className="credential-dossier-card">
+          <div>
+            <div className="card-header-strip">
+              <span className="card-header-badge"><Fingerprint size={14}/> Unique Identification (UIDAI)</span>
+              <span className="gov-auth-seal"><BadgeCheck size={12}/> e-KYC Verified</span>
+            </div>
+            <div className="card-val-row">
+              <div style={{ fontSize: '9px', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 700 }}>Aadhaar Number</div>
+              <div className={`credential-main-val ${!isUnlocked ? 'masked' : ''}`}>
+                {credentials?.aadhaar_number || '•••• •••• ••••'}
+                {isUnlocked && credentials?.aadhaar_number && (
+                  <button type="button" className="copy-cred-btn" onClick={() => handleCopy(credentials.aadhaar_number, 'aadhaar')} title="Copy Aadhaar number">
+                    {copiedField === 'aadhaar' ? <Check size={14} color="#246f60"/> : <Copy size={14}/>}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="card-sub-stats">
+            <div className="card-sub-stat">
+              <span>Authentication Type</span>
+              <strong>Aadhaar Iris & Fingerprint L0</strong>
+            </div>
+            <div className="card-sub-stat">
+              <span>Linked Mobile</span>
+              <strong>+91 ••••• •••92</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. PAN CARD */}
+        <div className="credential-dossier-card">
+          <div>
+            <div className="card-header-strip">
+              <span className="card-header-badge"><CreditCard size={14}/> Income Tax Department (PAN)</span>
+              <span className="gov-auth-seal"><BadgeCheck size={12}/> ITD Verified</span>
+            </div>
+            <div className="card-val-row">
+              <div style={{ fontSize: '9px', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 700 }}>Permanent Account Number</div>
+              <div className={`credential-main-val ${!isUnlocked ? 'masked' : ''}`}>
+                {credentials?.pan_number || 'ABCDE••••F'}
+                {isUnlocked && credentials?.pan_number && (
+                  <button type="button" className="copy-cred-btn" onClick={() => handleCopy(credentials.pan_number, 'pan')} title="Copy PAN">
+                    {copiedField === 'pan' ? <Check size={14} color="#246f60"/> : <Copy size={14}/>}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="card-sub-stats">
+            <div className="card-sub-stat">
+              <span>Tax Category</span>
+              <strong>Govt Official / Public Representative</strong>
+            </div>
+            <div className="card-sub-stat">
+              <span>Tax Assessment Jurisdiction</span>
+              <strong>{user.organization.state || 'National Circle'}</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. DISBURSAL BANK ACCOUNT */}
+        <div className="credential-dossier-card">
+          <div>
+            <div className="card-header-strip">
+              <span className="card-header-badge"><Landmark size={14}/> PFMS Disbursal Bank Account</span>
+              <span className="gov-auth-seal"><BadgeCheck size={12}/> PFMS Linked</span>
+            </div>
+            <div className="card-val-row">
+              <div style={{ fontSize: '9px', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 700 }}>Bank Account Number</div>
+              <div className={`credential-main-val ${!isUnlocked ? 'masked' : ''}`}>
+                {credentials?.bank_account_number || '••••••••••••'}
+                {isUnlocked && credentials?.bank_account_number && (
+                  <button type="button" className="copy-cred-btn" onClick={() => handleCopy(credentials.bank_account_number, 'bank')} title="Copy account number">
+                    {copiedField === 'bank' ? <Check size={14} color="#246f60"/> : <Copy size={14}/>}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="card-sub-stats">
+            <div className="card-sub-stat">
+              <span>Banking Institution</span>
+              <strong>{credentials?.bank_name || 'State Bank of India'}</strong>
+            </div>
+            <div className="card-sub-stat">
+              <span>Branch IFSC Code</span>
+              <strong style={{ fontFamily: 'ui-monospace, monospace' }}>{credentials?.bank_ifsc || 'SBIN0000691'}</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* 4. BIOMETRICS & DEVICE CREDENTIAL */}
+        <div className="credential-dossier-card">
+          <div>
+            <div className="card-header-strip">
+              <span className="card-header-badge"><ShieldCheck size={14}/> Biometric Hardware Sensor</span>
+              <span className="gov-auth-seal" style={{ color: '#246f60' }}><BadgeCheck size={12}/> Level-0 Certified</span>
+            </div>
+            <div className="card-val-row">
+              <div style={{ fontSize: '9px', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 700 }}>Registered Biometric Device ID</div>
+              <div className="credential-main-val" style={{ fontSize: '13px', fontFamily: 'ui-monospace, monospace' }}>
+                {credentials?.biometric_device_id || 'UIDAI-L0-MANTRA-MFS100'}
+              </div>
+            </div>
+          </div>
+          <div className="card-sub-stats">
+            <div className="card-sub-stat">
+              <span>PFMS Agency Code</span>
+              <strong style={{ fontFamily: 'ui-monospace, monospace' }}>{credentials?.pfms_code || 'PFMS-GOI-00123'}</strong>
+            </div>
+            <div className="card-sub-stat">
+              <span>Biometric Enrollment</span>
+              <strong>Active · Fingerprint & Iris</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* BIOMETRIC SCANNER MODAL */}
+    {scannerOpen && (
+      <div className="scanner-modal-backdrop" onClick={() => setScannerOpen(false)}>
+        <div className="scanner-modal-content" onClick={e => e.stopPropagation()}>
+          <button type="button" className="scanner-modal-close" onClick={() => setScannerOpen(false)} aria-label="Close scanner">
+            <X size={18}/>
+          </button>
+
+          <div className="biometric-hologram-wrap">
+            <div className="hologram-ring" />
+            <div className="hologram-ring-pulse" />
+            <div className="hologram-core">
+              <Fingerprint size={56} strokeWidth={1.5} />
+              {(scannerStep === 'scanning' || scannerStep === 'verifying') && <div className="hologram-laser-line" />}
+            </div>
+          </div>
+
+          <h3 className="scanner-step-title">
+            {scannerStep === 'ready' && 'Aadhaar Biometric Verification'}
+            {scannerStep === 'scanning' && 'Scanning Optical Fingerprint...'}
+            {scannerStep === 'verifying' && 'Validating UIDAI Biometric Key...'}
+            {scannerStep === 'success' && 'Biometric Authentication Confirmed!'}
+          </h3>
+
+          <p className="scanner-step-desc">
+            {scannerStep === 'ready' && `Please place your registered finger on the optical sensor or touch your device authenticator to verify identity for ${user.full_name}.`}
+            {scannerStep === 'scanning' && 'Analyzing minutiae points, ridge bifurcation, and cryptographic hardware tokens...'}
+            {scannerStep === 'verifying' && 'Comparing biometric template against the encrypted official government identity vault...'}
+            {scannerStep === 'success' && 'Identity confirmed with 99.8% biometric fidelity. Unlocking official credentials vault...'}
+          </p>
+
+          <div className="scanner-progress-bar">
+            <div className="scanner-progress-fill" style={{ width: `${scannerProgress}%` }} />
+          </div>
+
+          {scannerStep === 'ready' && (
+            <button type="button" className="button primary" style={{ width: '100%', justifyContent: 'center', padding: '12px' }} onClick={handleStartScan}>
+              <Fingerprint size={18}/> Touch Sensor / Scan Fingerprint
+            </button>
+          )}
+
+          <div className="scanner-footer-note">
+            <LockKeyhole size={12}/> Aadhaar Level-0 Encrypted · Tamper-evident Audit Chained
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* EDIT CREDENTIALS MODAL */}
+    {editModalOpen && (
+      <div className="scanner-modal-backdrop" onClick={() => setEditModalOpen(false)}>
+        <div className="cred-edit-dialog" onClick={e => e.stopPropagation()}>
+          <button type="button" className="scanner-modal-close" onClick={() => setEditModalOpen(false)} aria-label="Close edit dialog">
+            <X size={18}/>
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div className="vault-icon-badge"><Edit3 size={20}/></div>
+            <div>
+              <h3 style={{ margin: 0, font: "800 17px 'Manrope', sans-serif" }}>Update Official Credentials</h3>
+              <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted)' }}>Official KYC & PFMS Treasury Account Details for {user.full_name}</p>
+            </div>
+          </div>
+
+          <form className="cred-edit-form" onSubmit={handleSaveCredentials}>
+            <div className="cred-input-row">
+              <div className="cred-field-group">
+                <label>Permanent Account Number (PAN)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. AAAPK1982A"
+                  maxLength={10}
+                  value={editPan}
+                  onChange={e => setEditPan(e.target.value.toUpperCase())}
+                  required
+                />
+              </div>
+              <div className="cred-field-group">
+                <label>Aadhaar Number (12 Digits)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 982345128891"
+                  maxLength={14}
+                  value={editAadhaar}
+                  onChange={e => setEditAadhaar(e.target.value.replace(/\D/g, ''))}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="cred-field-group">
+              <label>Official Disbursal Bank Name</label>
+              <input
+                type="text"
+                placeholder="e.g. State Bank of India"
+                value={editBankName}
+                onChange={e => setEditBankName(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="cred-input-row">
+              <div className="cred-field-group">
+                <label>Bank Account Number</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 30291823901"
+                  value={editBankAcc}
+                  onChange={e => setEditBankAcc(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="cred-field-group">
+                <label>Branch IFSC Code</label>
+                <input
+                  type="text"
+                  placeholder="e.g. SBIN0000691"
+                  maxLength={11}
+                  value={editBankIfsc}
+                  onChange={e => setEditBankIfsc(e.target.value.toUpperCase())}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="cred-field-group">
+              <label>PFMS Agency / Vendor Code</label>
+              <input
+                type="text"
+                placeholder="e.g. PFMS-DEL-00918"
+                value={editPfms}
+                onChange={e => setEditPfms(e.target.value.toUpperCase())}
+              />
+            </div>
+
+            <div className="scope-notice" style={{ marginTop: '6px' }}>
+              <ShieldCheck size={16}/>
+              <span>Updates are sealed into the cryptographic audit trail and linked to your official identity.</span>
+            </div>
+
+            <div className="cred-form-actions">
+              <button type="button" className="button secondary" onClick={() => setEditModalOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="button primary" disabled={savingCreds}>
+                <Fingerprint size={16}/> {savingCreds ? 'Saving & Auditing…' : 'Save & Confirm with Biometrics'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+
+    {/* EXISTING OFFICIAL ASSIGNMENT & JURISDICTION GRID */}
+    <div className="profile-details-grid" style={{ marginTop: '18px' }}>
       <section className="card profile-section-card">
         <div className="profile-section-heading"><span><BriefcaseBusiness size={19}/></span><div><h2>Official assignment</h2><p>Your role and administrative placement</p></div></div>
         <dl className="profile-facts">

@@ -66,3 +66,15 @@ def decode_token(token: str, expected_type: str) -> dict:
     if payload.get("type") != expected_type:
         raise jwt.InvalidTokenError("Incorrect token type")
     return payload
+
+
+def create_biometric_unlock_token(user_id: str, minutes: int = 5) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user_id,
+        "type": "biometric_unlock",
+        "iat": now,
+        "exp": now + timedelta(minutes=minutes),
+        "jti": secrets.token_urlsafe(16),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)

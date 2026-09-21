@@ -8,6 +8,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from sqlalchemy import text
+
 from .api import alerts, audit, auth, cases, dashboard, imports, projects, reports
 from .config import settings
 from .database import Base, SessionLocal, engine
@@ -22,6 +24,24 @@ async def lifespan(_: FastAPI):
     # reviewed Alembic migration history, never implicit schema creation.
     if settings.environment == "development":
         Base.metadata.create_all(bind=engine)
+        if settings.database_url.startswith("sqlite"):
+            with engine.connect() as conn:
+                for col_name, col_type in [
+                    ("pan_number", "VARCHAR(10)"),
+                    ("aadhaar_number", "VARCHAR(16)"),
+                    ("bank_name", "VARCHAR(120)"),
+                    ("bank_account_number", "VARCHAR(30)"),
+                    ("bank_ifsc", "VARCHAR(15)"),
+                    ("pfms_code", "VARCHAR(40)"),
+                    ("biometric_enrolled", "BOOLEAN DEFAULT 1"),
+                    ("biometric_device_id", "VARCHAR(80)"),
+                    ("biometric_enrolled_at", "DATETIME"),
+                ]:
+                    try:
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
+                        conn.commit()
+                    except Exception:
+                        pass
     if settings.auto_seed:
         with SessionLocal() as db:
             seed_demo_data(db)
@@ -43,7 +63,7 @@ app.add_middleware(
     allow_origin_regex=settings.development_origin_regex if settings.environment == "development" else None,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Biometric-Token"],
 )
 
 
