@@ -23,6 +23,7 @@ class OrganizationOut(BaseModel):
     level: OrgLevel
     state: str | None
     district: str | None
+    constituency: str | None = None
 
 
 class UserOut(BaseModel):
@@ -49,6 +50,7 @@ class ProjectOut(BaseModel):
     title: str
     state: str
     district: str
+    constituency: str | None = None
     location: str
     category: str
     agency: str

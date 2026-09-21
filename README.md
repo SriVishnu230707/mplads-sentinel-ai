@@ -174,16 +174,16 @@ gantt
 
 Data boundaries are enforced at the database query level on every request. Client-side visibility is never relied upon as an access control mechanism.
 
-| Feature / Data Scope | Ministry National Supervisor | State Nodal Authority | District Authority | Auditor / Investigator |
-|---|---|---|---|---|
-| **Territorial Scope** | All States & UTs | Assigned State only (e.g. KA) | Assigned District only (e.g. Bengaluru Rural) | All States & UTs |
-| **Command Center Metrics** | National Aggregates | State-Level Aggregates | District-Level Aggregates | National Aggregates |
-| **Risk Scans** | Full Portfolio | State Works | District Works | Full Portfolio |
-| **Alert Triage** | Read & Assign | Read & Assign | Read & Provide Evidence | Read & Audit |
-| **Case Initiation** | Allowed | Allowed | Restricted | Allowed |
-| **Case Closure** | Maker-Checker Approval | State Sign-Off | Restricted | Independent Reviewer Sign-Off |
-| **CSV Data Export** | Full National Data | State Scope Only | District Scope Only | Full National Audit |
-| **Audit Hash Integrity** | Verify Chain | Restricted | Restricted | Verify Chain |
+| Feature / Data Scope | Ministry National Supervisor | State Nodal Authority | District Authority | Auditor / Investigator | Member of Parliament |
+|---|---|---|---|---|---|
+| **Territorial Scope** | All States & UTs | Assigned State only (e.g. KA) | Assigned District only (e.g. Bengaluru Rural) | All States & UTs | Assigned Constituency (e.g. Bengaluru Rural LS) |
+| **Command Center Metrics** | National Aggregates | State-Level Aggregates | District-Level Aggregates | National Aggregates | Constituency Portfolio & ₹5 Cr Entitlement |
+| **Risk Scans** | Full Portfolio | State Works | District Works | Full Portfolio | Constituency Works |
+| **Alert Triage** | Read & Assign | Read & Assign | Read & Provide Evidence | Read & Audit | Read & MP Flagged Review |
+| **Case Initiation** | Allowed | Allowed | Restricted | Allowed | Allowed (Constituency Scope) |
+| **Case Closure** | Maker-Checker Approval | State Sign-Off | Restricted | Independent Reviewer Sign-Off | Restricted (Maker-Checker Guarded) |
+| **CSV Data Export** | Full National Data | State Scope Only | District Scope Only | Full National Audit | Constituency Scope Only |
+| **Audit Hash Integrity** | Verify Chain | Restricted | Restricted | Verify Chain | Restricted |
 
 ---
 
@@ -269,6 +269,7 @@ All seeded demonstration accounts use the password: `Sentinel@2026`
 
 | Role | Official Email | Assigned Territorial Scope |
 |---|---|---|
+| **Member of Parliament** | `mp@sentinel.gov.in` | Bengaluru Rural Parliamentary Constituency (Lok Sabha) |
 | **Ministry National Supervisor** | `ministry@sentinel.gov.in` | National (All States & Districts) |
 | **State Nodal Authority** | `state@sentinel.gov.in` | Karnataka state portfolio only |
 | **District Authority** | `district@sentinel.gov.in` | Bengaluru Rural district works only |

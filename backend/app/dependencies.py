@@ -42,6 +42,13 @@ def apply_project_scope(query, user: User):
     org = user.organization
     if user.role in {Role.MINISTRY, Role.AUDITOR} and org.level.value == "national":
         return query
+    if user.role == Role.MP:
+        if org.constituency:
+            return query.where(Project.constituency == org.constituency)
+        if org.district:
+            return query.where(Project.state == org.state, Project.district == org.district)
+        if org.state:
+            return query.where(Project.state == org.state)
     if org.level.value == "state":
         return query.where(Project.state == org.state)
     if org.level.value == "district":
