@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 import jwt
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,8 +12,24 @@ from ..database import get_db
 from ..dependencies import get_current_user
 from ..models import RefreshSession, User
 from ..rate_limit import RateLimitUnavailable, login_attempt_limiter
-from ..schemas import AccessToken, LoginRequest, UserOut
-from ..security import DUMMY_PASSWORD_HASH, create_access_token, create_refresh_token, decode_token, hash_token, verify_password
+from ..schemas import (
+    AccessToken,
+    BiometricVerifyRequest,
+    BiometricVerifyResponse,
+    LoginRequest,
+    OfficialCredentialsOut,
+    UpdateCredentialsRequest,
+    UserOut,
+)
+from ..security import (
+    DUMMY_PASSWORD_HASH,
+    create_access_token,
+    create_biometric_unlock_token,
+    create_refresh_token,
+    decode_token,
+    hash_token,
+    verify_password,
+)
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -113,3 +129,117 @@ def logout(response: Response, sentinel_refresh: str | None = Cookie(default=Non
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)) -> User:
     return user
+
+
+def check_biometric_unlocked(user: User, token: str | None) -> bool:
+    if not token:
+        return False
+    try:
+        claims = decode_token(token, "biometric_unlock")
+        return claims.get("sub") == user.id
+    except Exception:
+        return False
+
+
+def to_credentials_out(user: User, is_unlocked: bool) -> OfficialCredentialsOut:
+    def mask_pan(pan: str | None) -> str | None:
+        if not pan or len(pan) < 6:
+            return pan
+        return f"{pan[:5]}••••{pan[-1]}"
+
+    def mask_aadhaar(aadhaar: str | None) -> str | None:
+        if not aadhaar or len(aadhaar) < 4:
+            return aadhaar
+        return f"•••• •••• {aadhaar[-4:]}"
+
+    def mask_bank(acc: str | None) -> str | None:
+        if not acc or len(acc) < 4:
+            return acc
+        return f"••••••••{acc[-4:]}"
+
+    return OfficialCredentialsOut(
+        user_id=user.id,
+        full_name=user.full_name,
+        role=user.role,
+        pan_number=user.pan_number if is_unlocked else mask_pan(user.pan_number),
+        aadhaar_number=user.aadhaar_number if is_unlocked else mask_aadhaar(user.aadhaar_number),
+        bank_name=user.bank_name,
+        bank_account_number=user.bank_account_number if is_unlocked else mask_bank(user.bank_account_number),
+        bank_ifsc=user.bank_ifsc,
+        pfms_code=user.pfms_code,
+        biometric_enrolled=user.biometric_enrolled,
+        biometric_device_id=user.biometric_device_id,
+        biometric_enrolled_at=user.biometric_enrolled_at,
+        is_unlocked=is_unlocked,
+    )
+
+
+@router.get("/credentials", response_model=OfficialCredentialsOut)
+def get_credentials(
+    x_biometric_token: str | None = Header(default=None),
+    user: User = Depends(get_current_user),
+) -> OfficialCredentialsOut:
+    is_unlocked = check_biometric_unlocked(user, x_biometric_token)
+    return to_credentials_out(user, is_unlocked)
+
+
+@router.post("/credentials", response_model=OfficialCredentialsOut)
+def update_credentials(
+    payload: UpdateCredentialsRequest,
+    x_biometric_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> OfficialCredentialsOut:
+    if payload.pan_number is not None:
+        user.pan_number = payload.pan_number
+    if payload.aadhaar_number is not None:
+        user.aadhaar_number = payload.aadhaar_number
+    if payload.bank_name is not None:
+        user.bank_name = payload.bank_name
+    if payload.bank_account_number is not None:
+        user.bank_account_number = payload.bank_account_number
+    if payload.bank_ifsc is not None:
+        user.bank_ifsc = payload.bank_ifsc
+    if payload.pfms_code is not None:
+        user.pfms_code = payload.pfms_code
+
+    record_event(
+        db,
+        action="auth.credentials_update",
+        entity_type="user_credentials",
+        actor_id=user.id,
+        details={"pan_updated": payload.pan_number is not None, "bank_updated": payload.bank_account_number is not None},
+    )
+    db.commit()
+    db.refresh(user)
+    is_unlocked = check_biometric_unlocked(user, x_biometric_token)
+    return to_credentials_out(user, is_unlocked)
+
+
+@router.post("/biometric-verify", response_model=BiometricVerifyResponse)
+def biometric_verify(
+    payload: BiometricVerifyRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> BiometricVerifyResponse:
+    if not user.biometric_enrolled:
+        raise HTTPException(status_code=400, detail="Biometric authentication is not enrolled for this official account")
+
+    unlock_token = create_biometric_unlock_token(user.id, minutes=5)
+    now = datetime.now(timezone.utc)
+    record_event(
+        db,
+        action="auth.biometric_verify",
+        entity_type="biometric_vault",
+        actor_id=user.id,
+        details={"method": payload.method, "device_id": user.biometric_device_id},
+    )
+    db.commit()
+
+    return BiometricVerifyResponse(
+        status="verified",
+        verified_at=now,
+        message="Biometric authentication verified via UIDAI registered biometric vault",
+        unlock_token=unlock_token,
+        credentials=to_credentials_out(user, is_unlocked=True),
+    )

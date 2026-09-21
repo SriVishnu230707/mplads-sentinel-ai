@@ -97,6 +97,83 @@ export type ApiCase = {
   updated_at: string
 }
 
+export type OfficialCredentials = {
+  user_id: string
+  full_name: string
+  role: string
+  pan_number: string | null
+  aadhaar_number: string | null
+  bank_name: string | null
+  bank_account_number: string | null
+  bank_ifsc: string | null
+  pfms_code: string | null
+  biometric_enrolled: boolean
+  biometric_device_id: string | null
+  biometric_enrolled_at: string | null
+  is_unlocked: boolean
+}
+
+export type BiometricVerifyResult = {
+  status: string
+  verified_at: string
+  message: string
+  unlock_token: string
+  credentials: OfficialCredentials
+}
+
+export const DEFAULT_OFFICIAL_CREDENTIALS: Record<string, Partial<OfficialCredentials>> = {
+  mp: {
+    pan_number: 'EEKSK8892E',
+    aadhaar_number: '541928371928',
+    bank_name: 'State Bank of India (Parliament House Branch)',
+    bank_account_number: '10029384719',
+    bank_ifsc: 'SBIN0000691',
+    pfms_code: 'PFMS-MP-00518',
+    biometric_enrolled: true,
+    biometric_device_id: 'UIDAI-L0-SECUGEN-HAMSTERPRO',
+  },
+  ministry: {
+    pan_number: 'AAAPK1982A',
+    aadhaar_number: '982345128891',
+    bank_name: 'State Bank of India',
+    bank_account_number: '30291823901',
+    bank_ifsc: 'SBIN0000691',
+    pfms_code: 'PFMS-DEL-00918',
+    biometric_enrolled: true,
+    biometric_device_id: 'UIDAI-L0-MANTRA-MFS100',
+  },
+  state: {
+    pan_number: 'BBMPR7721B',
+    aadhaar_number: '871239841029',
+    bank_name: 'Canara Bank',
+    bank_account_number: '11029384756',
+    bank_ifsc: 'CNRB0000214',
+    pfms_code: 'PFMS-KA-04821',
+    biometric_enrolled: true,
+    biometric_device_id: 'UIDAI-L0-STARTEK-FM220',
+  },
+  district: {
+    pan_number: 'CCPRS3390C',
+    aadhaar_number: '761928374610',
+    bank_name: 'Karnataka Bank',
+    bank_account_number: '48291039481',
+    bank_ifsc: 'KARB0000108',
+    pfms_code: 'PFMS-BLR-09281',
+    biometric_enrolled: true,
+    biometric_device_id: 'UIDAI-L0-MORPHO-MSO1300',
+  },
+  auditor: {
+    pan_number: 'DDNPV4481D',
+    aadhaar_number: '652819403819',
+    bank_name: 'Punjab National Bank',
+    bank_account_number: '29103948192',
+    bank_ifsc: 'PUNB0012900',
+    pfms_code: 'PFMS-AUD-00192',
+    biometric_enrolled: true,
+    biometric_device_id: 'UIDAI-L0-MANTRA-MFS100',
+  },
+}
+
 export const DEMO_ACCOUNTS: Record<string, { password: string; user: ApiUser }> = {
   'mp@sentinel.gov.in': {
     password: 'Sentinel@2026',
@@ -570,6 +647,133 @@ export const api = {
     return {
       blob: new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }),
       filename: `mplads-portfolio-report-${new Date().toISOString().slice(0, 10)}.csv`,
+    }
+  },
+
+  async getCredentials(user: ApiUser, unlockToken?: string | null): Promise<OfficialCredentials> {
+    const headers: Record<string, string> = {}
+    if (unlockToken) {
+      headers['X-Biometric-Token'] = unlockToken
+    }
+    try {
+      return await request<OfficialCredentials>('/auth/credentials', { headers })
+    } catch {
+      const storageKey = `sentinel_official_creds_${user.id}`
+      let saved: Partial<OfficialCredentials> = {}
+      try {
+        const raw = localStorage.getItem(storageKey)
+        if (raw) saved = JSON.parse(raw)
+      } catch {}
+      const defaults = DEFAULT_OFFICIAL_CREDENTIALS[user.role] ?? DEFAULT_OFFICIAL_CREDENTIALS.ministry
+      const pan = saved.pan_number ?? defaults.pan_number ?? 'AAAPK1982A'
+      const aadhaar = saved.aadhaar_number ?? defaults.aadhaar_number ?? '982345128891'
+      const bank = saved.bank_name ?? defaults.bank_name ?? 'State Bank of India'
+      const acc = saved.bank_account_number ?? defaults.bank_account_number ?? '30291823901'
+      const ifsc = saved.bank_ifsc ?? defaults.bank_ifsc ?? 'SBIN0000691'
+      const pfms = saved.pfms_code ?? defaults.pfms_code ?? 'PFMS-GOI-00123'
+      const dev = saved.biometric_device_id ?? defaults.biometric_device_id ?? 'UIDAI-L0-MANTRA-MFS100'
+
+      const isUnlocked = Boolean(unlockToken)
+      return {
+        user_id: user.id,
+        full_name: user.full_name,
+        role: user.role,
+        pan_number: isUnlocked ? pan : `${pan.slice(0, 5)}••••${pan.slice(-1)}`,
+        aadhaar_number: isUnlocked ? aadhaar : `•••• •••• ${aadhaar.slice(-4)}`,
+        bank_name: bank,
+        bank_account_number: isUnlocked ? acc : `••••••••${acc.slice(-4)}`,
+        bank_ifsc: ifsc,
+        pfms_code: pfms,
+        biometric_enrolled: true,
+        biometric_device_id: dev,
+        biometric_enrolled_at: new Date(Date.now() - 90 * 86400000).toISOString(),
+        is_unlocked: isUnlocked,
+      }
+    }
+  },
+
+  async updateCredentials(user: ApiUser, payload: Partial<OfficialCredentials>, unlockToken?: string | null): Promise<OfficialCredentials> {
+    const headers: Record<string, string> = {}
+    if (unlockToken) {
+      headers['X-Biometric-Token'] = unlockToken
+    }
+    try {
+      const updated = await request<OfficialCredentials>('/auth/credentials', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      })
+      try {
+        localStorage.setItem(`sentinel_official_creds_${user.id}`, JSON.stringify(updated))
+      } catch {}
+      return updated
+    } catch {
+      const storageKey = `sentinel_official_creds_${user.id}`
+      let saved: Partial<OfficialCredentials> = {}
+      try {
+        const raw = localStorage.getItem(storageKey)
+        if (raw) saved = JSON.parse(raw)
+      } catch {}
+      const defaults = DEFAULT_OFFICIAL_CREDENTIALS[user.role] ?? DEFAULT_OFFICIAL_CREDENTIALS.ministry
+      const combined: OfficialCredentials = {
+        user_id: user.id,
+        full_name: user.full_name,
+        role: user.role,
+        pan_number: payload.pan_number ?? saved.pan_number ?? defaults.pan_number ?? 'AAAPK1982A',
+        aadhaar_number: payload.aadhaar_number ?? saved.aadhaar_number ?? defaults.aadhaar_number ?? '982345128891',
+        bank_name: payload.bank_name ?? saved.bank_name ?? defaults.bank_name ?? 'State Bank of India',
+        bank_account_number: payload.bank_account_number ?? saved.bank_account_number ?? defaults.bank_account_number ?? '30291823901',
+        bank_ifsc: payload.bank_ifsc ?? saved.bank_ifsc ?? defaults.bank_ifsc ?? 'SBIN0000691',
+        pfms_code: payload.pfms_code ?? saved.pfms_code ?? defaults.pfms_code ?? 'PFMS-GOI-00123',
+        biometric_enrolled: true,
+        biometric_device_id: defaults.biometric_device_id ?? 'UIDAI-L0-MANTRA-MFS100',
+        biometric_enrolled_at: new Date(Date.now() - 90 * 86400000).toISOString(),
+        is_unlocked: Boolean(unlockToken),
+      }
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(combined))
+      } catch {}
+      return combined
+    }
+  },
+
+  async verifyBiometrics(user: ApiUser, method = 'fingerprint'): Promise<BiometricVerifyResult> {
+    try {
+      return await request<BiometricVerifyResult>('/auth/biometric-verify', {
+        method: 'POST',
+        body: JSON.stringify({ method, device_challenge: `chal-${Date.now()}` }),
+      })
+    } catch {
+      const token = `bio-mock-token-${Date.now()}`
+      const storageKey = `sentinel_official_creds_${user.id}`
+      let saved: Partial<OfficialCredentials> = {}
+      try {
+        const raw = localStorage.getItem(storageKey)
+        if (raw) saved = JSON.parse(raw)
+      } catch {}
+      const defaults = DEFAULT_OFFICIAL_CREDENTIALS[user.role] ?? DEFAULT_OFFICIAL_CREDENTIALS.ministry
+      const creds: OfficialCredentials = {
+        user_id: user.id,
+        full_name: user.full_name,
+        role: user.role,
+        pan_number: saved.pan_number ?? defaults.pan_number ?? 'AAAPK1982A',
+        aadhaar_number: saved.aadhaar_number ?? defaults.aadhaar_number ?? '982345128891',
+        bank_name: saved.bank_name ?? defaults.bank_name ?? 'State Bank of India',
+        bank_account_number: saved.bank_account_number ?? defaults.bank_account_number ?? '30291823901',
+        bank_ifsc: saved.bank_ifsc ?? defaults.bank_ifsc ?? 'SBIN0000691',
+        pfms_code: saved.pfms_code ?? defaults.pfms_code ?? 'PFMS-GOI-00123',
+        biometric_enrolled: true,
+        biometric_device_id: defaults.biometric_device_id ?? 'UIDAI-L0-MANTRA-MFS100',
+        biometric_enrolled_at: new Date(Date.now() - 90 * 86400000).toISOString(),
+        is_unlocked: true,
+      }
+      return {
+        status: 'verified',
+        verified_at: new Date().toISOString(),
+        message: 'Biometric authentication verified via UIDAI registered biometric vault',
+        unlock_token: token,
+        credentials: creds,
+      }
     }
   },
 

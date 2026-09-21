@@ -29,16 +29,25 @@ def seed_demo_data(db: Session) -> None:
     bengaluru_mp = ensure_organization("Office of Hon'ble MP - Bengaluru Rural", OrgLevel.DISTRICT, state="Karnataka", district="Bengaluru Rural", constituency="Bengaluru Rural", parent_id=karnataka.id)
 
     demo_users = [
-        ("ministry@sentinel.gov.in", "Arun Kumar", Role.MINISTRY, national.id),
-        ("state@sentinel.gov.in", "Meera Rao", Role.STATE, karnataka.id),
-        ("district@sentinel.gov.in", "Ravi Shetty", Role.DISTRICT, bengaluru.id),
-        ("auditor@sentinel.gov.in", "Nisha Verma", Role.AUDITOR, national.id),
-        ("mp@sentinel.gov.in", "Dr. K. Sudhakar (Hon'ble MP)", Role.MP, bengaluru_mp.id),
+        ("ministry@sentinel.gov.in", "Arun Kumar", Role.MINISTRY, national.id, "AAAPK1982A", "982345128891", "State Bank of India", "30291823901", "SBIN0000691", "PFMS-DEL-00918", "UIDAI-L0-MANTRA-MFS100"),
+        ("state@sentinel.gov.in", "Meera Rao", Role.STATE, karnataka.id, "BBMPR7721B", "871239841029", "Canara Bank", "11029384756", "CNRB0000214", "PFMS-KA-04821", "UIDAI-L0-STARTEK-FM220"),
+        ("district@sentinel.gov.in", "Ravi Shetty", Role.DISTRICT, bengaluru.id, "CCPRS3390C", "761928374610", "Karnataka Bank", "48291039481", "KARB0000108", "PFMS-BLR-09281", "UIDAI-L0-MORPHO-MSO1300"),
+        ("auditor@sentinel.gov.in", "Nisha Verma", Role.AUDITOR, national.id, "DDNPV4481D", "652819403819", "Punjab National Bank", "29103948192", "PUNB0012900", "PFMS-AUD-00192", "UIDAI-L0-MANTRA-MFS100"),
+        ("mp@sentinel.gov.in", "Dr. K. Sudhakar (Hon'ble MP)", Role.MP, bengaluru_mp.id, "EEKSK8892E", "541928371928", "State Bank of India (Parliament House)", "10029384719", "SBIN0000691", "PFMS-MP-00518", "UIDAI-L0-SECUGEN-HAMSTERPRO"),
     ]
-    for email, full_name, role, organization_id in demo_users:
+    now = datetime.now(timezone.utc)
+    for email, full_name, role, organization_id, pan, aadhaar, bank, acc, ifsc, pfms, device in demo_users:
         user = db.scalar(select(User).where(User.email == email))
         if user is None:
-            db.add(User(email=email, full_name=full_name, password_hash=hash_password(DEMO_PASSWORD), role=role, organization_id=organization_id))
+            user = User(
+                email=email, full_name=full_name, password_hash=hash_password(DEMO_PASSWORD),
+                role=role, organization_id=organization_id,
+                pan_number=pan, aadhaar_number=aadhaar, bank_name=bank,
+                bank_account_number=acc, bank_ifsc=ifsc, pfms_code=pfms,
+                biometric_enrolled=True, biometric_device_id=device,
+                biometric_enrolled_at=now - timedelta(days=90),
+            )
+            db.add(user)
             continue
 
         credentials_repaired = not verify_password(DEMO_PASSWORD, user.password_hash)
@@ -46,6 +55,16 @@ def seed_demo_data(db: Session) -> None:
         user.role = role
         user.organization_id = organization_id
         user.is_active = True
+        user.pan_number = pan
+        user.aadhaar_number = aadhaar
+        user.bank_name = bank
+        user.bank_account_number = acc
+        user.bank_ifsc = ifsc
+        user.pfms_code = pfms
+        user.biometric_enrolled = True
+        user.biometric_device_id = device
+        if not user.biometric_enrolled_at:
+            user.biometric_enrolled_at = now - timedelta(days=90)
         if credentials_repaired:
             user.password_hash = hash_password(DEMO_PASSWORD)
             user.token_version += 1

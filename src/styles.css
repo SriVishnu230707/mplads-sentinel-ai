@@ -714,5 +714,443 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
   text-transform: uppercase;
 }
 
+/* ==========================================================================
+   OFFICIAL CREDENTIALS & BIOMETRIC PRIVACY VAULT
+   ========================================================================== */
+.biometric-vault-card {
+  margin-top: 18px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: var(--radius-card, 16px);
+  position: relative;
+  overflow: hidden;
+}
+.vault-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.vault-header-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.vault-icon-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, rgba(36, 111, 96, 0.15), rgba(36, 111, 96, 0.05));
+  color: var(--green-700);
+  border: 1px solid rgba(36, 111, 96, 0.2);
+}
+.vault-header-title h2 {
+  font: 800 18px/1.2 'Manrope', sans-serif;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+  color: var(--ink);
+}
+.vault-header-title p {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 0;
+}
+.vault-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.vault-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.vault-status-pill.locked {
+  background: rgba(212, 88, 76, 0.1);
+  color: #c94338;
+  border: 1px solid rgba(212, 88, 76, 0.25);
+}
+.vault-status-pill.unlocked {
+  background: rgba(63, 157, 127, 0.12);
+  color: var(--green-700);
+  border: 1px solid rgba(63, 157, 127, 0.3);
+}
+.vault-unlock-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.vault-unlock-btn.primary {
+  background: linear-gradient(135deg, var(--green-700), #1d5f52);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 14px rgba(27, 94, 81, 0.28);
+}
+.vault-unlock-btn.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(27, 94, 81, 0.38);
+}
+.vault-unlock-btn.lock-btn {
+  background: var(--canvas);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.vault-unlock-btn.lock-btn:hover {
+  background: var(--surface);
+  border-color: #d4584c;
+  color: #c94338;
+}
+.vault-banner {
+  margin: 16px 0 20px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+}
+.vault-banner.locked-banner {
+  background: color-mix(in srgb, var(--canvas) 60%, var(--surface));
+  border: 1px dashed var(--line);
+  color: var(--muted);
+}
+.vault-banner.unlocked-banner {
+  background: linear-gradient(90deg, rgba(63, 157, 127, 0.12), rgba(63, 157, 127, 0.04));
+  border: 1px solid rgba(63, 157, 127, 0.3);
+  color: var(--green-700);
+}
+.vault-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.vault-timer-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--surface);
+  border: 1px solid rgba(63, 157, 127, 0.3);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--green-700);
+}
 
+/* Credentials Grid */
+.credentials-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+.credential-dossier-card {
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  border-radius: 14px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.credential-dossier-card:hover {
+  border-color: color-mix(in srgb, var(--green-700) 40%, var(--line));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+.card-header-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.card-header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.gov-auth-seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--green-700);
+}
+.card-val-row {
+  margin: 8px 0;
+}
+.credential-main-val {
+  font: 800 20px/1.2 'Manrope', ui-monospace, monospace;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  word-break: break-all;
+}
+.credential-main-val.masked {
+  letter-spacing: 0.15em;
+  color: var(--muted);
+}
+.copy-cred-btn {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  transition: all 0.15s;
+}
+.copy-cred-btn:hover {
+  background: var(--surface);
+  color: var(--green-700);
+}
+.card-sub-stats {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.card-sub-stat span {
+  display: block;
+  font-size: 8.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+.card-sub-stat strong {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
 
+/* Biometric Scanner Modal */
+.scanner-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 16, 13, 0.72);
+  backdrop-filter: blur(8px);
+  z-index: 2500;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  animation: fade-in 0.2s ease-out;
+}
+.scanner-modal-content {
+  width: min(440px, 100%);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--green-700) 35%, var(--line));
+  border-radius: 20px;
+  padding: 32px 28px;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+.scanner-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+}
+.scanner-modal-close:hover {
+  background: var(--canvas);
+  color: var(--ink);
+}
+.biometric-hologram-wrap {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  margin: 16px auto 24px;
+  display: grid;
+  place-items: center;
+}
+.hologram-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(63, 157, 127, 0.2);
+}
+.hologram-ring-pulse {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid rgba(63, 157, 127, 0.4);
+  animation: bio-pulse 2s infinite cubic-bezier(0.2, 0.8, 0.4, 1);
+}
+.hologram-core {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(36, 111, 96, 0.18), transparent 70%);
+  display: grid;
+  place-items: center;
+  position: relative;
+  color: var(--green-700);
+}
+.hologram-laser-line {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #48b583, transparent);
+  box-shadow: 0 0 12px #48b583;
+  animation: laser-scan 1.6s infinite ease-in-out alternate;
+}
+.scanner-step-title {
+  font: 800 17px/1.3 'Manrope', sans-serif;
+  margin: 0 0 6px;
+  color: var(--ink);
+}
+.scanner-step-desc {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0 0 20px;
+}
+.scanner-progress-bar {
+  height: 6px;
+  background: var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+  margin: 16px 0;
+}
+.scanner-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #246f60, #48b583);
+  transition: width 0.3s ease;
+}
+.scanner-footer-note {
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+/* Edit Modal Form */
+.cred-edit-dialog {
+  width: min(540px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 26px;
+  position: relative;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.cred-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
+}
+.cred-input-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.cred-field-group label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.cred-field-group input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--ink);
+  font-weight: 600;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.cred-field-group input:focus {
+  outline: none;
+  border-color: var(--green-700);
+}
+.cred-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+@keyframes bio-pulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.18); opacity: 0.2; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+@keyframes laser-scan {
+  0% { top: 15%; opacity: 0.3; }
+  50% { opacity: 1; }
+  100% { top: 80%; opacity: 0.3; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 768px) {
+  .credentials-cards-grid {
+    grid-template-columns: 1fr;
+  }
+  .cred-input-row {
+    grid-template-columns: 1fr;
+  }
+}
