@@ -20,6 +20,8 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 @router.get("", response_model=list[ProjectOut])
 def list_projects(
     search: str | None = Query(default=None, max_length=100),
+    category: str | None = Query(default=None, max_length=80),
+    risk_level: str | None = Query(default=None, max_length=20),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -28,7 +30,20 @@ def list_projects(
     query = apply_project_scope(select(Project), user)
     if search:
         term = f"%{search.strip().lower()}%"
-        query = query.where(or_(func.lower(Project.id).like(term), func.lower(Project.title).like(term), func.lower(Project.district).like(term), func.lower(Project.agency).like(term)))
+        query = query.where(
+            or_(
+                func.lower(Project.id).like(term),
+                func.lower(Project.title).like(term),
+                func.lower(Project.district).like(term),
+                func.lower(Project.agency).like(term),
+                func.lower(Project.category).like(term),
+                func.lower(func.coalesce(Project.constituency, "")).like(term),
+            )
+        )
+    if category and category.lower() != "all":
+        query = query.where(func.lower(Project.category) == category.strip().lower())
+    if risk_level and risk_level.lower() != "all":
+        query = query.where(func.lower(Project.risk_level) == risk_level.strip().lower())
     return list(db.scalars(query.order_by(Project.risk_score.desc()).offset(offset).limit(limit)).all())
 
 

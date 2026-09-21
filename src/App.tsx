@@ -85,6 +85,36 @@ const nav: { id: Page; label: string; icon: typeof LayoutDashboard; count?: numb
 const riskClass = (level: RiskLevel) => `risk-badge risk-${level.toLowerCase()}`
 const formatCrore = (value: number) => `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Cr`
 
+const roleWorkspaceLabel = (role: Role) => {
+  switch (role) {
+    case 'Member of Parliament':
+      return 'PARLIAMENTARY WORKSPACE'
+    case 'State Nodal Authority':
+      return 'STATE WORKSPACE'
+    case 'District Authority':
+      return 'DISTRICT WORKSPACE'
+    case 'Auditor / Investigator':
+      return 'VIGILANCE & AUDIT WORKSPACE'
+    default:
+      return 'NATIONAL WORKSPACE'
+  }
+}
+
+const roleLiveEyebrow = (role: Role) => {
+  switch (role) {
+    case 'Member of Parliament':
+      return 'Live constituency oversight'
+    case 'State Nodal Authority':
+      return 'Live state oversight'
+    case 'District Authority':
+      return 'Live district oversight'
+    case 'Auditor / Investigator':
+      return 'Independent vigilance oversight'
+    default:
+      return 'Live national overview'
+  }
+}
+
 const greeting = (name: string): string => {
   const hour = new Date().getHours()
   const firstName = name.split(' ')[0]
@@ -369,7 +399,7 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
           <button className="icon-button sidebar-close" onClick={() => setMobileMenu(false)} aria-label="Close navigation"><X size={20} /></button>
         </div>
 
-        {!collapsed && <div className="workspace-label">NATIONAL WORKSPACE</div>}
+        {!collapsed && <div className="workspace-label">{roleWorkspaceLabel(role)}</div>}
         <nav aria-label="Primary navigation">
           {nav.map(item => {
             const Icon = item.icon
@@ -387,8 +417,8 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
         {!collapsed && (
           <div className="system-card">
             <div className="system-head"><span className="pulse" /> System operational</div>
-            <p>Last intelligence scan completed successfully.</p>
-            <div><span>18,420 works</span><span>02:14 IST</span></div>
+            <p>Intelligence scan verified across your jurisdiction.</p>
+            <div><span>{summary ? `${summary.active_works} works monitored` : `${projectData.length} works monitored`}</span><span>Live sync</span></div>
           </div>
         )}
         <button className="collapse-button" onClick={() => setCollapsed(v => !v)}>
@@ -448,7 +478,7 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
         <div className="content">
           <div className="page-heading">
             <div>
-              <div className="eyebrow"><span className="status-dot" /> {page === 'profile' ? 'Verified official identity' : 'Live national overview'}</div>
+              <div className="eyebrow"><span className="status-dot" /> {page === 'profile' ? 'Verified official identity' : roleLiveEyebrow(role)}</div>
               <h1>{page === 'overview' ? greeting(user.full_name) : page === 'profile' ? 'My profile' : nav.find(n => n.id === page)?.label}</h1>
               <p>{page === 'overview' ? 'Here is what requires attention across MPLADS today.' : pageDescriptions[page]}</p>
             </div>
@@ -579,6 +609,25 @@ function Overview({
     }
   }, [chartMode, selectedStateName, selectedMonth])
 
+  const categoryStats = useMemo(() => {
+    const map: Record<string, { count: number; sanctioned: number; spent: number; progressSum: number }> = {}
+    projects.forEach(p => {
+      const cat = p.category || 'Civic Amenities'
+      if (!map[cat]) map[cat] = { count: 0, sanctioned: 0, spent: 0, progressSum: 0 }
+      map[cat].count += 1
+      map[cat].sanctioned += p.sanctioned
+      map[cat].spent += p.spent
+      map[cat].progressSum += p.progress
+    })
+    return Object.entries(map).map(([name, stat]) => ({
+      name,
+      count: stat.count,
+      sanctioned: Math.round(stat.sanctioned * 10) / 10,
+      spent: Math.round(stat.spent * 10) / 10,
+      avgProgress: stat.count > 0 ? Math.round(stat.progressSum / stat.count) : 0,
+    }))
+  }, [projects])
+
   return <>
     {role === 'Member of Parliament' && (
       <section className="mp-constituency-banner">
@@ -624,6 +673,41 @@ function Overview({
       <Metric icon={IndianRupee} label="Expenditure monitored" value={summary ? formatCrore(summary.expenditure_lakh / 100) : '—'} delta={utilization} note={summary ? `of ${formatCrore(summary.sanctioned_lakh / 100)} sanctioned` : 'loading authorized portfolio'} color="blue" onClick={onNavigateProjects} />
       <Metric icon={AlertTriangle} label="High-risk works" value={summary ? summary.high_risk_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.open_alerts) : '—'} note="open alerts requiring review" color="red" onClick={onNavigateAlerts} />
       <Metric icon={Clock3} label="Delayed works" value={summary ? summary.delayed_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.active_works) : '—'} note="active works assessed" color="amber" onClick={onNavigateProjects} />
+    </section>
+
+    <section className="card asset-creation-card">
+      <div className="asset-creation-head">
+        <div>
+          <h3><Building2 size={18} /> Durable Community Asset Creation</h3>
+          <p>Analysis of developmental civic assets, sector investments and certified completion milestones</p>
+        </div>
+        {onNavigateProjects && (
+          <button type="button" className="button secondary" onClick={onNavigateProjects} style={{ padding: '6px 12px', fontSize: '11px' }}>
+            Explore assets register <ChevronRight size={14} />
+          </button>
+        )}
+      </div>
+      <div className="asset-category-grid">
+        {categoryStats.map(cat => (
+          <div key={cat.name} className="asset-category-card">
+            <div className="asset-card-top">
+              <strong>{cat.name}</strong>
+              <span className="asset-card-count">{cat.count} {cat.count === 1 ? 'work' : 'works'}</span>
+            </div>
+            <div className="asset-card-stats">
+              <span>Sanctioned / Spent</span>
+              <b>₹{cat.spent}L / ₹{cat.sanctioned}L</b>
+            </div>
+            <div className="asset-card-progress">
+              <span style={{ width: `${cat.avgProgress}%` }} />
+            </div>
+            <div className="asset-card-stats" style={{ fontSize: '10px' }}>
+              <span>Certified milestone</span>
+              <b>{cat.avgProgress}% physical</b>
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
 
     <section className="dashboard-grid">
@@ -1479,7 +1563,7 @@ function ProjectTable({ projects, onSelect, compact = false }: { projects: Proje
               aria-label={`Open ${p.title}`}
             >
               <td>
-                <strong>{p.title}</strong>
+                <strong>{p.title} <span className="category-tag">{p.category}</span></strong>
                 <span>{p.id} · {p.location}{p.constituency ? ` · ${p.constituency} (LS)` : ''}</span>
               </td>
               <td>
@@ -1556,22 +1640,25 @@ function AlertsView({
   onRunScan?: () => void
   scanning?: boolean
 }) {
-  const [filter, setFilter] = useState<'all' | 'critical' | 'high' | 'assigned'>('all')
+  const [filter, setFilter] = useState<'all' | 'critical' | 'high' | 'mismatch' | 'cost'>('all')
   const [localSearch, setLocalSearch] = useState('')
 
   const sortedProjects = useMemo(() => [...projects].sort((a, b) => b.risk - a.risk), [projects])
   const criticalCount = useMemo(() => sortedProjects.filter(p => p.level === 'Critical').length, [sortedProjects])
   const highCount = useMemo(() => sortedProjects.filter(p => p.level === 'High').length, [sortedProjects])
+  const mismatchCount = useMemo(() => sortedProjects.filter(p => p.issue.includes('%')).length, [sortedProjects])
+  const costCount = useMemo(() => sortedProjects.filter(p => p.issue.toLowerCase().includes('estimate') || p.issue.toLowerCase().includes('cost') || p.issue.toLowerCase().includes('above')).length, [sortedProjects])
 
   const filteredProjects = useMemo(() => {
     let list = sortedProjects
     if (filter === 'critical') list = list.filter(p => p.level === 'Critical')
     else if (filter === 'high') list = list.filter(p => p.level === 'High')
-    else if (filter === 'assigned') list = list.slice(0, 2)
+    else if (filter === 'mismatch') list = list.filter(p => p.issue.includes('%'))
+    else if (filter === 'cost') list = list.filter(p => p.issue.toLowerCase().includes('estimate') || p.issue.toLowerCase().includes('cost') || p.issue.toLowerCase().includes('above'))
 
     if (localSearch.trim()) {
       const q = localSearch.trim().toLowerCase()
-      list = list.filter(p => `${p.id} ${p.title} ${p.location} ${p.agency} ${p.issue}`.toLowerCase().includes(q))
+      list = list.filter(p => `${p.id} ${p.title} ${p.location} ${p.agency} ${p.issue} ${p.category}`.toLowerCase().includes(q))
     }
     return list
   }, [sortedProjects, filter, localSearch])
@@ -1589,8 +1676,11 @@ function AlertsView({
           <button className={filter === 'high' ? 'active' : ''} onClick={() => setFilter('high')}>
             High <b>{highCount}</b>
           </button>
-          <button className={filter === 'assigned' ? 'active' : ''} onClick={() => setFilter('assigned')}>
-            Assigned to me <b>2</b>
+          <button className={filter === 'mismatch' ? 'active' : ''} onClick={() => setFilter('mismatch')}>
+            Payment mismatch <b>{mismatchCount}</b>
+          </button>
+          <button className={filter === 'cost' ? 'active' : ''} onClick={() => setFilter('cost')}>
+            Cost outlier <b>{costCount}</b>
           </button>
         </div>
         {onRunScan && (
@@ -1601,7 +1691,7 @@ function AlertsView({
       </div>
       <section className="card data-card">
         <Toolbar
-          searchPlaceholder="Search alert, work or district…"
+          searchPlaceholder="Search alert, work, district or category…"
           search={localSearch}
           onSearchChange={setLocalSearch}
         />
@@ -1613,23 +1703,103 @@ function AlertsView({
 
 function ProjectsView({ projects, onSelect }: { projects: Project[]; onSelect: (p: Project) => void }) {
   const [localSearch, setLocalSearch] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [selectedSignal, setSelectedSignal] = useState<'all' | 'high_risk' | 'cost_outlier' | 'mismatch' | 'delay'>('all')
+
+  const categories = useMemo(() => {
+    const list = Array.from(new Set(projects.map(p => p.category).filter(Boolean)))
+    return ['all', ...list]
+  }, [projects])
+
+  const stats = useMemo(() => {
+    const total = projects.length
+    const inProgress = projects.filter(p => p.progress > 0 && p.progress < 100).length
+    const delayed = projects.filter(p => p.issue.toLowerCase().includes('delay') || (p.progress < 50 && p.spent / Math.max(p.sanctioned, 1) > 0.5)).length
+    const completed = projects.filter(p => p.progress >= 65).length
+    return { total, inProgress, delayed, completed }
+  }, [projects])
+
   const filtered = useMemo(() => {
-    if (!localSearch.trim()) return projects
+    let list = projects
+    if (selectedCategory !== 'all') {
+      list = list.filter(p => p.category === selectedCategory)
+    }
+    if (selectedSignal === 'high_risk') {
+      list = list.filter(p => p.level === 'Critical' || p.level === 'High')
+    } else if (selectedSignal === 'cost_outlier') {
+      list = list.filter(p => p.issue.toLowerCase().includes('estimate') || p.issue.toLowerCase().includes('cost') || p.issue.toLowerCase().includes('above'))
+    } else if (selectedSignal === 'mismatch') {
+      list = list.filter(p => p.issue.toLowerCase().includes('paid') || p.issue.toLowerCase().includes('%'))
+    } else if (selectedSignal === 'delay') {
+      list = list.filter(p => p.issue.toLowerCase().includes('delay') || p.progress < 50)
+    }
+    if (!localSearch.trim()) return list
     const q = localSearch.trim().toLowerCase()
-    return projects.filter(p => `${p.id} ${p.title} ${p.location} ${p.agency}`.toLowerCase().includes(q))
-  }, [projects, localSearch])
+    return list.filter(p => `${p.id} ${p.title} ${p.location} ${p.agency} ${p.category} ${p.constituency || ''}`.toLowerCase().includes(q))
+  }, [projects, selectedCategory, selectedSignal, localSearch])
 
   return (
     <>
       <section className="mini-stats">
-        <div><span>All works</span><strong>18,420</strong></div>
-        <div><span>In progress</span><strong>11,864</strong></div>
-        <div><span>Delayed</span><strong>2,184</strong></div>
-        <div><span>Completed this FY</span><strong>4,372</strong></div>
+        <div><span>Authorized works</span><strong>{stats.total}</strong></div>
+        <div><span>In active execution</span><strong>{stats.inProgress}</strong></div>
+        <div><span>Delayed / Overdue</span><strong>{stats.delayed}</strong></div>
+        <div><span>Advanced / Complete</span><strong>{stats.completed}</strong></div>
       </section>
       <section className="card data-card">
+        <div className="filter-strip-row">
+          <span>Asset Category:</span>
+          {categories.map(cat => (
+            <button
+              key={cat}
+              type="button"
+              className={`filter-pill ${selectedCategory === cat ? 'active' : ''}`}
+              onClick={() => setSelectedCategory(cat)}
+            >
+              {cat === 'all' ? 'All categories' : cat}
+            </button>
+          ))}
+        </div>
+        <div className="filter-strip-row" style={{ borderBottom: 'none', paddingTop: '6px' }}>
+          <span>Risk & Anomaly Filter:</span>
+          <button
+            type="button"
+            className={`filter-pill ${selectedSignal === 'all' ? 'active' : ''}`}
+            onClick={() => setSelectedSignal('all')}
+          >
+            All works
+          </button>
+          <button
+            type="button"
+            className={`filter-pill ${selectedSignal === 'high_risk' ? 'active' : ''}`}
+            onClick={() => setSelectedSignal('high_risk')}
+          >
+            Critical & High risk
+          </button>
+          <button
+            type="button"
+            className={`filter-pill ${selectedSignal === 'cost_outlier' ? 'active' : ''}`}
+            onClick={() => setSelectedSignal('cost_outlier')}
+          >
+            Cost overrun / Benchmark outlier
+          </button>
+          <button
+            type="button"
+            className={`filter-pill ${selectedSignal === 'mismatch' ? 'active' : ''}`}
+            onClick={() => setSelectedSignal('mismatch')}
+          >
+            Payment–progress divergence
+          </button>
+          <button
+            type="button"
+            className={`filter-pill ${selectedSignal === 'delay' ? 'active' : ''}`}
+            onClick={() => setSelectedSignal('delay')}
+          >
+            Delay forecast
+          </button>
+        </div>
         <Toolbar
-          searchPlaceholder="Search work ID, title or agency…"
+          searchPlaceholder="Search work ID, title, category, constituency or agency…"
           search={localSearch}
           onSearchChange={setLocalSearch}
         />
@@ -2497,27 +2667,44 @@ function ReportsView({
   const [activeReport, setActiveReport] = useState<GeneratedReport | null>(null)
   const [generatingTag, setGeneratingTag] = useState<string | null>(null)
 
+  const defaultBriefingTitle = user.role === 'mp'
+    ? 'Constituency oversight briefing'
+    : user.role === 'state'
+    ? 'State implementation digest'
+    : user.role === 'district'
+    ? 'District works & risk briefing'
+    : 'National risk briefing'
+
+  const defaultBriefingDesc = user.role === 'mp'
+    ? `Executive monitoring summary for ${user.organization.constituency || 'Constituency'} recommended works, fund absorption and asset creation.`
+    : user.role === 'state'
+    ? `State-level summary of fund release velocity and inter-district milestones.`
+    : user.role === 'district'
+    ? `Operational audit of executing agencies, measurements and field evidence.`
+    : 'Executive overview of emerging risks and cross-jurisdiction performance.'
+
   // Seed default reports or retrieve from state
   const [reportsHistory, setReportsHistory] = useState<GeneratedReport[]>(() => {
     return [
       {
         id: 'REP-2026-DAILY-4821',
-        title: 'National risk briefing',
+        title: defaultBriefingTitle,
         tag: 'Daily',
-        description: 'Executive overview of emerging risks and state performance.',
+        description: defaultBriefingDesc,
         timestamp: '19 Sep 2026, 09:30 AM IST',
-        generatedBy: 'System Automated Engine',
-        scope: 'National Portfolio (All India)',
+        generatedBy: `${user.full_name} (${role})`,
+        scope: user.organization.name,
         classification: 'OFFICIAL / SENSITIVE - AUDIT LOGGED',
-        totalWorks: 6,
-        sanctionedLakh: 520,
-        expenditureLakh: 374.6,
-        highRiskCount: 2,
-        delayedCount: 3,
+        totalWorks: projects.length,
+        sanctionedLakh: summary ? summary.sanctioned_lakh : projects.reduce((acc, p) => acc + p.sanctioned, 0),
+        expenditureLakh: summary ? summary.expenditure_lakh : projects.reduce((acc, p) => acc + p.spent, 0),
+        highRiskCount: summary ? summary.high_risk_works : projects.filter(p => p.level === 'Critical' || p.level === 'High').length,
+        delayedCount: summary ? summary.delayed_works : projects.filter(p => p.progress < 50).length,
         findings: [
-          'Critical payment-progress discrepancy detected in Bengaluru Rural (82% disbursed vs 34% certified execution).',
-          'Delay trajectory warning active across 3 North-Eastern and Northern infrastructure packages.',
-          'Physical milestone evidence required from 2 district implementing agencies prior to Q3 fund sanction.'
+          `Analyzed authorized developmental works within ${user.organization.name}.`,
+          'Financial disbursement velocity evaluated against geo-tagged physical milestone certifications.',
+          'Delay trajectory early warnings calibrated against historical completion norms.',
+          'Durable community asset creation verified against category schedule of rates.'
         ],
         projects: projects.slice(0, 6),
       }
@@ -2525,9 +2712,10 @@ function ReportsView({
   })
 
   const reportTemplates = [
-    { icon: Gauge, title: 'National risk briefing', text: 'Executive overview of emerging risks and state performance.', tag: 'Daily', code: 'DAILY' },
+    { icon: Gauge, title: defaultBriefingTitle, text: defaultBriefingDesc, tag: 'Daily', code: 'DAILY' },
     { icon: IndianRupee, title: 'Fund utilization analysis', text: 'Allocation, expenditure and unusual financial patterns.', tag: 'Monthly', code: 'FND' },
     { icon: Clock3, title: 'Delay and completion outlook', text: 'Forecasted delay risk and intervention opportunities.', tag: 'Weekly', code: 'DLY' },
+    { icon: Building2, title: 'Asset creation & community amenities audit', text: 'Creation of durable public assets, category distribution and citizen benefit impact.', tag: 'Quarterly', code: 'AST' },
     { icon: Network, title: 'Vendor relationship review', text: 'Concentration, shared identities and network anomalies.', tag: 'Quarterly', code: 'VND' },
   ]
 
@@ -2552,13 +2740,13 @@ function ReportsView({
           `Analyzed ${projects.length} authorized works across ${user.organization.name}.`,
           `${highRisk} works currently exceed critical/high risk thresholds requiring field oversight.`,
           'Primary anomaly driver: Disproportionate expenditure velocity compared to verified physical milestones.',
-          'Geo-spatial boundary checks verified 100% of works within authorized parliamentary constituency bounds.'
+          'Geo-spatial boundary checks verified 100% of works within authorized bounds.'
         ]
       } else if (template.code === 'FND') {
         findings = [
           `Total sanctioned allocation of ₹${totalSanctioned.toLocaleString('en-IN')} Lakh monitored.`,
           `Cumulative expenditure recorded at ₹${totalSpent.toLocaleString('en-IN')} Lakh (${totalSanctioned > 0 ? Math.round((totalSpent / totalSanctioned) * 100) : 0}% overall utilization).`,
-          'Identified 2 schemes where stage disbursements occurred without requisite photographic evidence.',
+          'Identified schemes where stage disbursements occurred without requisite photographic evidence.',
           'Recommended release freeze for accounts with unresolved vendor duplicate flags.'
         ]
       } else if (template.code === 'DLY') {
@@ -2568,12 +2756,19 @@ function ReportsView({
           'Key bottlenecks cited: Inter-departmental Right of Way clearances and material price escalations.',
           'Fast-track intervention proposed for works with >80% funds disbursed.'
         ]
+      } else if (template.code === 'AST') {
+        findings = [
+          `Audited delivery of durable community assets across ${user.organization.name}.`,
+          `Categorized distribution across Road connectivity, Healthcare infrastructure, Drinking Water facilities, and Educational blocks.`,
+          'Physical milestone verification certified against GPS coordinates within authorized bounds.',
+          'Identified durable community assets nearing full completion ready for civic handover.'
+        ]
       } else {
         findings = [
           'Evaluated vendor concentration across executing state agencies.',
-          'Identified common registered address pattern among 3 bidding contractors in Devanahalli cluster.',
+          'Identified common registered address pattern among bidding contractors.',
           'Cross-referenced tax and PAN identifiers against public works blacklist registry.',
-          'Detailed relationship graph dispatched to State Nodal Auditor.'
+          'Detailed relationship graph dispatched to authorized vigilance officers.'
         ]
       }
 
@@ -2881,7 +3076,7 @@ function ProjectDrawer({ project, onClose }: { project: Project; onClose: () => 
     }
   }
 
-  return <><div className="drawer-scrim" onClick={onClose}/><aside className="drawer"><header><div><span className="drawer-label">PHASE 4 EARLY-WARNING PROFILE</span><h2>{project.title}</h2><p>{project.id} · {project.location}{project.constituency ? ` · ${project.constituency} (Lok Sabha)` : ''}</p></div><button className="icon-button" onClick={onClose} aria-label="Close project details"><X size={20}/></button></header><div className="drawer-body"><div className="risk-hero"><div className={`risk-ring ring-${project.level.toLowerCase()}`}><strong>{project.risk}</strong><span>/100</span></div><div><span className={riskClass(project.level)}><i/>{project.level} risk</span><h3>Human review recommended</h3><p>Signals are indicators, not a determination of fraud.</p></div></div><div className="quick-facts"><div><span>Sanctioned</span><strong>{formatCrore(project.sanctioned / 100)}</strong></div><div><span>Spent</span><strong>{formatCrore(project.spent / 100)}</strong></div><div><span>Progress</span><strong>{project.progress}%</strong></div></div>{loading && <p className="intelligence-loading">Loading authorized intelligence…</p>}{prediction && <section className="drawer-section prediction-card"><div className="section-title-row"><h3>Delay early warning</h3><span className="prediction-score">{prediction.delay_probability}% · {prediction.confidence}</span></div><p>{prediction.disclaimer}</p><ul>{prediction.factors.map(factor => <li key={factor}>{factor}</li>)}</ul></section>}{intelligence && <><section className="drawer-section"><div className="section-title-row"><h3>Project health</h3><span className={`health-badge ${intelligence.health_band.toLowerCase().replaceAll(' ', '-')}`}>{intelligence.health_score}/100 · {intelligence.health_band}</span></div><div className="health-track"><span style={{width: `${intelligence.health_score}%`}}/></div></section><section className="drawer-section"><h3>Compliance watch</h3>{intelligence.compliance.map(item => <article className="compliance-item" key={item.label}><span className={`compliance-dot ${item.status}`}/><div><strong>{item.label}</strong><p>{item.detail}</p></div><small>{item.status}</small></article>)}</section><section className="drawer-section"><h3>Potential duplicate works</h3>{intelligence.duplicate_candidates.length ? intelligence.duplicate_candidates.map(candidate => <article className="duplicate-item" key={candidate.project_id}><div><strong>{candidate.title}</strong><p>{candidate.project_id} · {candidate.location}</p><small>{candidate.reasons.join(' · ')}</small></div><b>{candidate.similarity_score}%</b></article>) : <p className="empty-intelligence">No similar works crossed the review threshold.</p>}</section><section className="drawer-section"><h3>Risk history</h3>{intelligence.risk_timeline.map((point, index) => <div className="timeline-item" key={`${point.recorded_at}-${point.score}`}><span className={index === intelligence.risk_timeline.length - 1 ? 'current' : ''}>{index === intelligence.risk_timeline.length - 1 && <Check size={12}/>}</span><p><strong>{point.score}/100 · {point.level}</strong><br/>{new Date(point.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p></div>)}</section><section className="drawer-section"><h3>Submit site evidence</h3><p className="evidence-note">Metadata only for this prototype. The server verifies time, progress, and a 2 km project radius.</p><form className="evidence-form" onSubmit={submitEvidence}><div><label>Latitude<input type="number" min="6" max="38" step="0.0001" value={evidenceLatitude} onChange={event => setEvidenceLatitude(event.target.value)} required/></label><label>Longitude<input type="number" min="68" max="98" step="0.0001" value={evidenceLongitude} onChange={event => setEvidenceLongitude(event.target.value)} required/></label></div><label>Observed progress (%)<input type="number" min={project.progress} max="100" value={evidenceProgress} onChange={event => setEvidenceProgress(event.target.value)} required/></label><label>Inspection remarks<textarea value={evidenceRemarks} onChange={event => setEvidenceRemarks(event.target.value)} minLength={3} maxLength={1000} required/></label><button className="button secondary" disabled={savingEvidence}>{savingEvidence ? 'Verifying evidence…' : 'Submit verified metadata'}</button></form></section></>}</div><footer>{actionMessage && <span className="drawer-message">{actionMessage}</span>}<button className="button secondary" onClick={onClose}>Close</button>{alert?.status === 'open' && <button className="button primary" onClick={startReview}><ClipboardCheck size={17}/> Start review</button>}</footer></aside></>
+  return <><div className="drawer-scrim" onClick={onClose}/><aside className="drawer"><header><div><span className="drawer-label">MPLADS EARLY-WARNING RISK DOSSIER</span><h2>{project.title}</h2><p>{project.id} · {project.location}{project.constituency ? ` · ${project.constituency} (Lok Sabha)` : ''}</p></div><button className="icon-button" onClick={onClose} aria-label="Close project details"><X size={20}/></button></header><div className="drawer-body"><div className="risk-hero"><div className={`risk-ring ring-${project.level.toLowerCase()}`}><strong>{project.risk}</strong><span>/100</span></div><div><span className={riskClass(project.level)}><i/>{project.level} risk</span><h3>Human review recommended</h3><p>Signals are indicators, not a determination of fraud.</p></div></div><div className="quick-facts"><div><span>Sanctioned</span><strong>{formatCrore(project.sanctioned / 100)}</strong></div><div><span>Spent</span><strong>{formatCrore(project.spent / 100)}</strong></div><div><span>Progress</span><strong>{project.progress}%</strong></div></div>{loading && <p className="intelligence-loading">Loading authorized intelligence…</p>}{prediction && <section className="drawer-section prediction-card"><div className="section-title-row"><h3>Delay early warning</h3><span className="prediction-score">{prediction.delay_probability}% · {prediction.confidence}</span></div><p>{prediction.disclaimer}</p><ul>{prediction.factors.map(factor => <li key={factor}>{factor}</li>)}</ul></section>}{intelligence && <><section className="drawer-section"><div className="section-title-row"><h3>Project health</h3><span className={`health-badge ${intelligence.health_band.toLowerCase().replaceAll(' ', '-')}`}>{intelligence.health_score}/100 · {intelligence.health_band}</span></div><div className="health-track"><span style={{width: `${intelligence.health_score}%`}}/></div></section><section className="drawer-section"><h3>Compliance watch</h3>{intelligence.compliance.map(item => <article className="compliance-item" key={item.label}><span className={`compliance-dot ${item.status}`}/><div><strong>{item.label}</strong><p>{item.detail}</p></div><small>{item.status}</small></article>)}</section><section className="drawer-section"><h3>Potential duplicate works</h3>{intelligence.duplicate_candidates.length ? intelligence.duplicate_candidates.map(candidate => <article className="duplicate-item" key={candidate.project_id}><div><strong>{candidate.title}</strong><p>{candidate.project_id} · {candidate.location}</p><small>{candidate.reasons.join(' · ')}</small></div><b>{candidate.similarity_score}%</b></article>) : <p className="empty-intelligence">No similar works crossed the review threshold.</p>}</section><section className="drawer-section"><h3>Risk history</h3>{intelligence.risk_timeline.map((point, index) => <div className="timeline-item" key={`${point.recorded_at}-${point.score}`}><span className={index === intelligence.risk_timeline.length - 1 ? 'current' : ''}>{index === intelligence.risk_timeline.length - 1 && <Check size={12}/>}</span><p><strong>{point.score}/100 · {point.level}</strong><br/>{new Date(point.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p></div>)}</section><section className="drawer-section"><h3>Submit site evidence</h3><p className="evidence-note">Metadata only for this prototype. The server verifies time, progress, and a 2 km project radius.</p><form className="evidence-form" onSubmit={submitEvidence}><div><label>Latitude<input type="number" min="6" max="38" step="0.0001" value={evidenceLatitude} onChange={event => setEvidenceLatitude(event.target.value)} required/></label><label>Longitude<input type="number" min="68" max="98" step="0.0001" value={evidenceLongitude} onChange={event => setEvidenceLongitude(event.target.value)} required/></label></div><label>Observed progress (%)<input type="number" min={project.progress} max="100" value={evidenceProgress} onChange={event => setEvidenceProgress(event.target.value)} required/></label><label>Inspection remarks<textarea value={evidenceRemarks} onChange={event => setEvidenceRemarks(event.target.value)} minLength={3} maxLength={1000} required/></label><button className="button secondary" disabled={savingEvidence}>{savingEvidence ? 'Verifying evidence…' : 'Submit verified metadata'}</button></form></section></>}</div><footer>{actionMessage && <span className="drawer-message">{actionMessage}</span>}<button className="button secondary" onClick={onClose}>Close</button>{alert?.status === 'open' && <button className="button primary" onClick={startReview}><ClipboardCheck size={17}/> Start review</button>}</footer></aside></>
 }
 
 function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: ApiUser) => void }) {
