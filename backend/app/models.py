@@ -62,6 +62,7 @@ class Organization(Base):
     level: Mapped[OrgLevel] = mapped_column(Enum(OrgLevel))
     state: Mapped[str | None] = mapped_column(String(80), index=True)
     district: Mapped[str | None] = mapped_column(String(100), index=True)
+    constituency: Mapped[str | None] = mapped_column(String(100), index=True)
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("organizations.id"))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -94,6 +95,7 @@ class Project(Base):
     title: Mapped[str] = mapped_column(String(240), index=True)
     state: Mapped[str] = mapped_column(String(80), index=True)
     district: Mapped[str] = mapped_column(String(100), index=True)
+    constituency: Mapped[str | None] = mapped_column(String(100), index=True)
     location: Mapped[str] = mapped_column(String(160))
     category: Mapped[str] = mapped_column(String(80), index=True)
     agency: Mapped[str] = mapped_column(String(180))

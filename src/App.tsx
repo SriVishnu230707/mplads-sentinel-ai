@@ -3,7 +3,7 @@ import {
   Activity, AlertTriangle, BarChart3, Bell,
   Building2, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp,
   ClipboardCheck, Clock3, Download, FileSearch, Filter, FolderKanban, Gauge,
-  IndianRupee, LayoutDashboard, LockKeyhole, Map, Menu, Moon,
+  IndianRupee, Landmark, LayoutDashboard, LockKeyhole, Map, Menu, Moon,
   Network, PanelLeftClose, Search, Settings, ShieldCheck, Sparkles, Sun,
   Users, X, Zap, LogOut, Eye, EyeOff, UserRound, Mail, MapPin, Fingerprint,
   KeyRound, BadgeCheck, Globe2, BriefcaseBusiness, Printer, FileText, CheckCircle2, ArrowRight,
@@ -70,7 +70,7 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 
 
 type Page = 'overview' | 'alerts' | 'projects' | 'map' | 'cases' | 'reports' | 'admin' | 'profile'
-type Role = 'Ministry National Supervisor' | 'State Nodal Authority' | 'District Authority' | 'Auditor / Investigator'
+type Role = 'Ministry National Supervisor' | 'State Nodal Authority' | 'District Authority' | 'Auditor / Investigator' | 'Member of Parliament'
 
 const nav: { id: Page; label: string; icon: typeof LayoutDashboard; count?: number }[] = [
   { id: 'overview', label: 'Command centre', icon: LayoutDashboard },
@@ -122,11 +122,12 @@ const getInitialPage = (): Page => {
 
 const roleLabels: Record<ApiUser['role'], Role> = {
   ministry: 'Ministry National Supervisor', state: 'State Nodal Authority', district: 'District Authority',
-  auditor: 'Auditor / Investigator', field_officer: 'District Authority', mp: 'Ministry National Supervisor',
+  auditor: 'Auditor / Investigator', field_officer: 'District Authority', mp: 'Member of Parliament',
 }
 
 const toProject = (p: ApiProject): Project => ({
   id: p.id, title: p.title, location: p.location, state: p.state, district: p.district,
+  constituency: p.constituency ?? undefined,
   category: p.category, agency: p.agency, sanctioned: p.sanctioned_lakh, spent: p.spent_lakh,
   progress: p.physical_progress, risk: p.risk_score, level: p.risk_level,
   issue: p.risk_reasons[0]?.explanation ?? 'No material irregularity detected', updated: new Date(p.updated_at).toLocaleString('en-IN'),
@@ -464,6 +465,8 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
             <Overview
               projects={filtered}
               summary={summary}
+              user={user}
+              role={role}
               onSelect={handleSelectProject}
               isDark={dark}
               onNavigateMap={() => setPage('map')}
@@ -494,6 +497,8 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
 function Overview({
   projects,
   summary,
+  user,
+  role,
   onSelect,
   isDark,
   onNavigateMap,
@@ -504,6 +509,8 @@ function Overview({
 }: {
   projects: Project[]
   summary: ApiDashboardSummary | null
+  user: ApiUser
+  role: Role
   onSelect: (p: Project) => void
   isDark: boolean
   onNavigateMap: () => void
@@ -573,6 +580,45 @@ function Overview({
   }, [chartMode, selectedStateName, selectedMonth])
 
   return <>
+    {role === 'Member of Parliament' && (
+      <section className="mp-constituency-banner">
+        <div className="mp-banner-header">
+          <div className="mp-avatar-seal"><Landmark size={24} /></div>
+          <div>
+            <div className="mp-eyebrow">PARLIAMENTARY CONSTITUENCY OVERSIGHT · LOK SABHA</div>
+            <h2>{user.organization.constituency || 'Bengaluru Rural'} Parliamentary Constituency</h2>
+            <p>Direct oversight dashboard for Hon'ble Member of Parliament: <strong>{user.full_name}</strong></p>
+          </div>
+          <div className="mp-entitlement-badge">
+            <span>ANNUAL MPLADS ENTITLEMENT</span>
+            <strong>₹5.00 Crore</strong>
+          </div>
+        </div>
+        <div className="mp-stats-row">
+          <div className="mp-stat-box">
+            <span>Recommended Works</span>
+            <strong>{summary ? summary.active_works : projects.length}</strong>
+            <small>Sanctioned: ₹{summary ? (summary.sanctioned_lakh / 100).toFixed(2) : '1.14'} Cr</small>
+          </div>
+          <div className="mp-stat-box">
+            <span>Total Expenditure Released</span>
+            <strong>₹{summary ? (summary.expenditure_lakh / 100).toFixed(2) : '0.79'} Cr</strong>
+            <small>{summary && summary.sanctioned_lakh > 0 ? Math.round(summary.expenditure_lakh / summary.sanctioned_lakh * 100) : 69}% absorption</small>
+          </div>
+          <div className="mp-stat-box highlight">
+            <span>Available Entitlement Balance</span>
+            <strong>₹{summary ? Math.max(0, 5.0 - (summary.expenditure_lakh / 100)).toFixed(2) : '4.21'} Cr</strong>
+            <small>Uncommitted MPLADS corpus</small>
+          </div>
+          <div className="mp-stat-box alert">
+            <span>Flagged for MP Review</span>
+            <strong>{summary ? summary.high_risk_works : 1}</strong>
+            <small>{summary ? summary.open_alerts : 1} priority alerts</small>
+          </div>
+        </div>
+      </section>
+    )}
+
     <section className="metrics-grid">
       <Metric icon={FolderKanban} label="Active works" value={summary ? summary.active_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.delayed_works) : '—'} note="delayed works in your scope" color="teal" onClick={onNavigateProjects} />
       <Metric icon={IndianRupee} label="Expenditure monitored" value={summary ? formatCrore(summary.expenditure_lakh / 100) : '—'} delta={utilization} note={summary ? `of ${formatCrore(summary.sanctioned_lakh / 100)} sanctioned` : 'loading authorized portfolio'} color="blue" onClick={onNavigateProjects} />
@@ -1434,7 +1480,7 @@ function ProjectTable({ projects, onSelect, compact = false }: { projects: Proje
             >
               <td>
                 <strong>{p.title}</strong>
-                <span>{p.id} · {p.location}</span>
+                <span>{p.id} · {p.location}{p.constituency ? ` · ${p.constituency} (LS)` : ''}</span>
               </td>
               <td>
                 <span className={riskClass(p.level)}><i />{p.risk} {p.level}</span>
@@ -2703,14 +2749,18 @@ function AdminView() {
 
 function ProfileView({ user, role, onLogout }: { user: ApiUser; role: Role; onLogout: () => void }) {
   const initials = user.full_name.split(' ').map(part => part[0]).slice(0, 2).join('')
-  const jurisdiction = user.organization.level === 'national'
-    ? 'All India'
-    : [user.organization.district, user.organization.state].filter(Boolean).join(', ')
-  const scopeDescription = user.organization.level === 'national'
-    ? 'Authorized to review the national project portfolio.'
-    : user.organization.level === 'state'
-      ? `Authorized to review projects within ${user.organization.state}.`
-      : `Authorized to review projects within ${user.organization.district} district.`
+  const jurisdiction = role === 'Member of Parliament' && user.organization.constituency
+    ? `${user.organization.constituency} Parliamentary Constituency (${user.organization.state || 'Karnataka'})`
+    : user.organization.level === 'national'
+      ? 'All India'
+      : [user.organization.district, user.organization.state].filter(Boolean).join(', ')
+  const scopeDescription = role === 'Member of Parliament'
+    ? `Authorized to monitor MPLADS works recommended across ${user.organization.constituency || 'your'} Parliamentary Constituency.`
+    : user.organization.level === 'national'
+      ? 'Authorized to review the national project portfolio.'
+      : user.organization.level === 'state'
+        ? `Authorized to review projects within ${user.organization.state}.`
+        : `Authorized to review projects within ${user.organization.district} district.`
 
   return <div className="profile-page">
     <section className="card profile-identity-card">
@@ -2735,7 +2785,8 @@ function ProfileView({ user, role, onLogout }: { user: ApiUser; role: Role; onLo
         <dl className="profile-facts">
           <div><dt>Role</dt><dd>{role}</dd></div>
           <div><dt>Organization</dt><dd>{user.organization.name}</dd></div>
-          <div><dt>Authority level</dt><dd className="capitalize">{user.organization.level}</dd></div>
+          {user.organization.constituency && <div><dt>Constituency</dt><dd>{user.organization.constituency} (Lok Sabha)</dd></div>}
+          <div><dt>Authority level</dt><dd className="capitalize">{role === 'Member of Parliament' ? 'Parliamentary Representative' : user.organization.level}</dd></div>
           <div><dt>Organization reference</dt><dd className="mono-value">{user.organization.id}</dd></div>
         </dl>
       </section>
@@ -2830,11 +2881,11 @@ function ProjectDrawer({ project, onClose }: { project: Project; onClose: () => 
     }
   }
 
-  return <><div className="drawer-scrim" onClick={onClose}/><aside className="drawer"><header><div><span className="drawer-label">PHASE 4 EARLY-WARNING PROFILE</span><h2>{project.title}</h2><p>{project.id} · {project.location}</p></div><button className="icon-button" onClick={onClose} aria-label="Close project details"><X size={20}/></button></header><div className="drawer-body"><div className="risk-hero"><div className={`risk-ring ring-${project.level.toLowerCase()}`}><strong>{project.risk}</strong><span>/100</span></div><div><span className={riskClass(project.level)}><i/>{project.level} risk</span><h3>Human review recommended</h3><p>Signals are indicators, not a determination of fraud.</p></div></div><div className="quick-facts"><div><span>Sanctioned</span><strong>{formatCrore(project.sanctioned / 100)}</strong></div><div><span>Spent</span><strong>{formatCrore(project.spent / 100)}</strong></div><div><span>Progress</span><strong>{project.progress}%</strong></div></div>{loading && <p className="intelligence-loading">Loading authorized intelligence…</p>}{prediction && <section className="drawer-section prediction-card"><div className="section-title-row"><h3>Delay early warning</h3><span className="prediction-score">{prediction.delay_probability}% · {prediction.confidence}</span></div><p>{prediction.disclaimer}</p><ul>{prediction.factors.map(factor => <li key={factor}>{factor}</li>)}</ul></section>}{intelligence && <><section className="drawer-section"><div className="section-title-row"><h3>Project health</h3><span className={`health-badge ${intelligence.health_band.toLowerCase().replaceAll(' ', '-')}`}>{intelligence.health_score}/100 · {intelligence.health_band}</span></div><div className="health-track"><span style={{width: `${intelligence.health_score}%`}}/></div></section><section className="drawer-section"><h3>Compliance watch</h3>{intelligence.compliance.map(item => <article className="compliance-item" key={item.label}><span className={`compliance-dot ${item.status}`}/><div><strong>{item.label}</strong><p>{item.detail}</p></div><small>{item.status}</small></article>)}</section><section className="drawer-section"><h3>Potential duplicate works</h3>{intelligence.duplicate_candidates.length ? intelligence.duplicate_candidates.map(candidate => <article className="duplicate-item" key={candidate.project_id}><div><strong>{candidate.title}</strong><p>{candidate.project_id} · {candidate.location}</p><small>{candidate.reasons.join(' · ')}</small></div><b>{candidate.similarity_score}%</b></article>) : <p className="empty-intelligence">No similar works crossed the review threshold.</p>}</section><section className="drawer-section"><h3>Risk history</h3>{intelligence.risk_timeline.map((point, index) => <div className="timeline-item" key={`${point.recorded_at}-${point.score}`}><span className={index === intelligence.risk_timeline.length - 1 ? 'current' : ''}>{index === intelligence.risk_timeline.length - 1 && <Check size={12}/>}</span><p><strong>{point.score}/100 · {point.level}</strong><br/>{new Date(point.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p></div>)}</section><section className="drawer-section"><h3>Submit site evidence</h3><p className="evidence-note">Metadata only for this prototype. The server verifies time, progress, and a 2 km project radius.</p><form className="evidence-form" onSubmit={submitEvidence}><div><label>Latitude<input type="number" min="6" max="38" step="0.0001" value={evidenceLatitude} onChange={event => setEvidenceLatitude(event.target.value)} required/></label><label>Longitude<input type="number" min="68" max="98" step="0.0001" value={evidenceLongitude} onChange={event => setEvidenceLongitude(event.target.value)} required/></label></div><label>Observed progress (%)<input type="number" min={project.progress} max="100" value={evidenceProgress} onChange={event => setEvidenceProgress(event.target.value)} required/></label><label>Inspection remarks<textarea value={evidenceRemarks} onChange={event => setEvidenceRemarks(event.target.value)} minLength={3} maxLength={1000} required/></label><button className="button secondary" disabled={savingEvidence}>{savingEvidence ? 'Verifying evidence…' : 'Submit verified metadata'}</button></form></section></>}</div><footer>{actionMessage && <span className="drawer-message">{actionMessage}</span>}<button className="button secondary" onClick={onClose}>Close</button>{alert?.status === 'open' && <button className="button primary" onClick={startReview}><ClipboardCheck size={17}/> Start review</button>}</footer></aside></>
+  return <><div className="drawer-scrim" onClick={onClose}/><aside className="drawer"><header><div><span className="drawer-label">PHASE 4 EARLY-WARNING PROFILE</span><h2>{project.title}</h2><p>{project.id} · {project.location}{project.constituency ? ` · ${project.constituency} (Lok Sabha)` : ''}</p></div><button className="icon-button" onClick={onClose} aria-label="Close project details"><X size={20}/></button></header><div className="drawer-body"><div className="risk-hero"><div className={`risk-ring ring-${project.level.toLowerCase()}`}><strong>{project.risk}</strong><span>/100</span></div><div><span className={riskClass(project.level)}><i/>{project.level} risk</span><h3>Human review recommended</h3><p>Signals are indicators, not a determination of fraud.</p></div></div><div className="quick-facts"><div><span>Sanctioned</span><strong>{formatCrore(project.sanctioned / 100)}</strong></div><div><span>Spent</span><strong>{formatCrore(project.spent / 100)}</strong></div><div><span>Progress</span><strong>{project.progress}%</strong></div></div>{loading && <p className="intelligence-loading">Loading authorized intelligence…</p>}{prediction && <section className="drawer-section prediction-card"><div className="section-title-row"><h3>Delay early warning</h3><span className="prediction-score">{prediction.delay_probability}% · {prediction.confidence}</span></div><p>{prediction.disclaimer}</p><ul>{prediction.factors.map(factor => <li key={factor}>{factor}</li>)}</ul></section>}{intelligence && <><section className="drawer-section"><div className="section-title-row"><h3>Project health</h3><span className={`health-badge ${intelligence.health_band.toLowerCase().replaceAll(' ', '-')}`}>{intelligence.health_score}/100 · {intelligence.health_band}</span></div><div className="health-track"><span style={{width: `${intelligence.health_score}%`}}/></div></section><section className="drawer-section"><h3>Compliance watch</h3>{intelligence.compliance.map(item => <article className="compliance-item" key={item.label}><span className={`compliance-dot ${item.status}`}/><div><strong>{item.label}</strong><p>{item.detail}</p></div><small>{item.status}</small></article>)}</section><section className="drawer-section"><h3>Potential duplicate works</h3>{intelligence.duplicate_candidates.length ? intelligence.duplicate_candidates.map(candidate => <article className="duplicate-item" key={candidate.project_id}><div><strong>{candidate.title}</strong><p>{candidate.project_id} · {candidate.location}</p><small>{candidate.reasons.join(' · ')}</small></div><b>{candidate.similarity_score}%</b></article>) : <p className="empty-intelligence">No similar works crossed the review threshold.</p>}</section><section className="drawer-section"><h3>Risk history</h3>{intelligence.risk_timeline.map((point, index) => <div className="timeline-item" key={`${point.recorded_at}-${point.score}`}><span className={index === intelligence.risk_timeline.length - 1 ? 'current' : ''}>{index === intelligence.risk_timeline.length - 1 && <Check size={12}/>}</span><p><strong>{point.score}/100 · {point.level}</strong><br/>{new Date(point.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p></div>)}</section><section className="drawer-section"><h3>Submit site evidence</h3><p className="evidence-note">Metadata only for this prototype. The server verifies time, progress, and a 2 km project radius.</p><form className="evidence-form" onSubmit={submitEvidence}><div><label>Latitude<input type="number" min="6" max="38" step="0.0001" value={evidenceLatitude} onChange={event => setEvidenceLatitude(event.target.value)} required/></label><label>Longitude<input type="number" min="68" max="98" step="0.0001" value={evidenceLongitude} onChange={event => setEvidenceLongitude(event.target.value)} required/></label></div><label>Observed progress (%)<input type="number" min={project.progress} max="100" value={evidenceProgress} onChange={event => setEvidenceProgress(event.target.value)} required/></label><label>Inspection remarks<textarea value={evidenceRemarks} onChange={event => setEvidenceRemarks(event.target.value)} minLength={3} maxLength={1000} required/></label><button className="button secondary" disabled={savingEvidence}>{savingEvidence ? 'Verifying evidence…' : 'Submit verified metadata'}</button></form></section></>}</div><footer>{actionMessage && <span className="drawer-message">{actionMessage}</span>}<button className="button secondary" onClick={onClose}>Close</button>{alert?.status === 'open' && <button className="button primary" onClick={startReview}><ClipboardCheck size={17}/> Start review</button>}</footer></aside></>
 }
 
 function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: ApiUser) => void }) {
-  const [email, setEmail] = useState('ministry@sentinel.gov.in')
+  const [email, setEmail] = useState('mp@sentinel.gov.in')
   const [password, setPassword] = useState('Sentinel@2026')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -2856,11 +2907,23 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: ApiUser) => 
     <section className="login-panel"><form onSubmit={submit}>
       <div className="mobile-login-brand"><ShieldCheck size={22}/><strong>MPLADS Sentinel</strong></div>
       <span className="login-kicker">AUTHORIZED ACCESS</span><h2>Welcome back</h2><p>Sign in with your assigned official account.</p>
+
+      <div className="demo-accounts-strip">
+        <span>Quick role selection:</span>
+        <div className="demo-role-pills">
+          <button type="button" onClick={() => setEmail('mp@sentinel.gov.in')} className={email === 'mp@sentinel.gov.in' ? 'active' : ''}>Hon'ble MP</button>
+          <button type="button" onClick={() => setEmail('ministry@sentinel.gov.in')} className={email === 'ministry@sentinel.gov.in' ? 'active' : ''}>Ministry</button>
+          <button type="button" onClick={() => setEmail('state@sentinel.gov.in')} className={email === 'state@sentinel.gov.in' ? 'active' : ''}>State</button>
+          <button type="button" onClick={() => setEmail('district@sentinel.gov.in')} className={email === 'district@sentinel.gov.in' ? 'active' : ''}>District</button>
+          <button type="button" onClick={() => setEmail('auditor@sentinel.gov.in')} className={email === 'auditor@sentinel.gov.in' ? 'active' : ''}>Auditor</button>
+        </div>
+      </div>
+
       <label>Official email<input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" required/></label>
       <label>Password<div className="password-field"><input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required minLength={8}/><button type="button" onClick={() => setShowPassword(v => !v)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button></div></label>
       {error && <div className="login-error"><AlertTriangle size={16}/>{error}</div>}
       <button className="button primary login-submit" disabled={loading}>{loading ? 'Verifying access…' : 'Sign in securely'}<ChevronRight size={18}/></button>
-      <div className="demo-note"><strong>Demonstration account</strong><span>Credentials are pre-filled. Other seeded roles are documented in the project README.</span></div>
+      <div className="demo-note"><strong>Demonstration credentials</strong><span>Password for all roles: <code>Sentinel@2026</code>. Click any role pill above to populate.</span></div>
       <small className="privacy-note"><LockKeyhole size={13}/> Access is role-scoped and recorded in the security audit trail.</small>
     </form></section>
   </main>

@@ -10,7 +10,7 @@ from ..models import Alert, AlertStatus, CaseStatus, InvestigationCase, Project,
 from ..schemas import CaseCreate, CaseOut, CaseUpdate
 
 router = APIRouter(prefix="/cases", tags=["investigations"])
-REVIEWERS = {Role.MINISTRY, Role.STATE, Role.DISTRICT, Role.AUDITOR}
+REVIEWERS = {Role.MINISTRY, Role.STATE, Role.DISTRICT, Role.AUDITOR, Role.MP}
 
 
 @router.get("", response_model=list[CaseOut])

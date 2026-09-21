@@ -368,3 +368,21 @@ def test_case_closure_requires_independent_reviewer_and_note():
         client.patch(f"/api/v1/cases/{case['id']}", headers=ministry_headers, json={"status": "closure_review"})
         forbidden = client.patch(f"/api/v1/cases/{case['id']}", headers=ministry_headers, json={"status": "closed", "closure_note": "same person"})
         assert forbidden.status_code == 403
+
+
+def test_mp_identity_and_constituency_scoped_access():
+    with TestClient(app) as client:
+        mp_token = login(client, "mp@sentinel.gov.in")
+        headers = {"Authorization": f"Bearer {mp_token}"}
+        me = client.get("/api/v1/auth/me", headers=headers)
+        assert me.status_code == 200
+        assert me.json()["role"] == "mp"
+        assert me.json()["organization"]["constituency"] == "Bengaluru Rural"
+
+        projects = client.get("/api/v1/projects", headers=headers)
+        assert projects.status_code == 200
+        assert {item["id"] for item in projects.json()} == {"MPL-KA-24018", "MPL-KA-24019"}
+
+        summary = client.get("/api/v1/dashboard/summary", headers=headers)
+        assert summary.status_code == 200
+        assert summary.json()["active_works"] == 2

@@ -6,6 +6,7 @@ export type Project = {
   location: string
   state: string
   district: string
+  constituency?: string
   category: string
   agency: string
   sanctioned: number
@@ -22,11 +23,11 @@ export type Project = {
 }
 
 export const projects: Project[] = [
-  { id: 'MPL-KA-24018', title: 'Rural Link Road Improvement', location: 'Devanahalli, Bengaluru Rural', state: 'Karnataka', district: 'Bengaluru Rural', category: 'Roads', agency: 'PWD Bengaluru Rural', sanctioned: 58, spent: 47.6, progress: 34, risk: 91, level: 'Critical', issue: '82% paid while physical progress is 34%', updated: '12 min ago', lat: 61, lng: 58, latitude: 13.246, longitude: 77.712 },
-  { id: 'MPL-UP-23872', title: 'Community Health Centre Extension', location: 'Sadar, Gorakhpur', state: 'Uttar Pradesh', district: 'Gorakhpur', category: 'Health', agency: 'District Health Society', sanctioned: 72, spent: 54.2, progress: 49, risk: 84, level: 'High', issue: 'Estimate 41% above comparable works', updated: '37 min ago', lat: 68, lng: 30, latitude: 26.760, longitude: 83.373 },
-  { id: 'MPL-MH-24103', title: 'Government School Science Block', location: 'Karjat, Raigad', state: 'Maharashtra', district: 'Raigad', category: 'Education', agency: 'Zilla Parishad Raigad', sanctioned: 44, spent: 26.8, progress: 52, risk: 76, level: 'High', issue: 'Possible duplicate work found 310 m away', updated: '1 hr ago', lat: 43, lng: 46, latitude: 18.910, longitude: 73.323 },
-  { id: 'MPL-AS-23711', title: 'Solar Drinking Water Facility', location: 'Bokakhat, Golaghat', state: 'Assam', district: 'Golaghat', category: 'Water', agency: 'PHE Golaghat', sanctioned: 18, spent: 15.4, progress: 67, risk: 63, level: 'Moderate', issue: 'Completion delay probability is 74%', updated: '2 hrs ago', lat: 80, lng: 40, latitude: 26.640, longitude: 93.600 },
-  { id: 'MPL-TN-24220', title: 'Community Learning Centre', location: 'Ambattur, Chennai', state: 'Tamil Nadu', district: 'Chennai', category: 'Community', agency: 'Greater Chennai Corporation', sanctioned: 36, spent: 18.1, progress: 55, risk: 28, level: 'Low', issue: 'No material irregularity detected', updated: '3 hrs ago', lat: 51, lng: 78, latitude: 13.114, longitude: 80.154 },
+  { id: 'MPL-KA-24018', title: 'Rural Link Road Improvement', location: 'Devanahalli, Bengaluru Rural', state: 'Karnataka', district: 'Bengaluru Rural', constituency: 'Bengaluru Rural', category: 'Roads', agency: 'PWD Bengaluru Rural', sanctioned: 58, spent: 47.6, progress: 34, risk: 91, level: 'Critical', issue: '82% paid while physical progress is 34%', updated: '12 min ago', lat: 61, lng: 58, latitude: 13.246, longitude: 77.712 },
+  { id: 'MPL-UP-23872', title: 'Community Health Centre Extension', location: 'Sadar, Gorakhpur', state: 'Uttar Pradesh', district: 'Gorakhpur', constituency: 'Gorakhpur', category: 'Health', agency: 'District Health Society', sanctioned: 72, spent: 54.2, progress: 49, risk: 84, level: 'High', issue: 'Estimate 41% above comparable works', updated: '37 min ago', lat: 68, lng: 30, latitude: 26.760, longitude: 83.373 },
+  { id: 'MPL-MH-24103', title: 'Government School Science Block', location: 'Karjat, Raigad', state: 'Maharashtra', district: 'Raigad', constituency: 'Raigad', category: 'Education', agency: 'Zilla Parishad Raigad', sanctioned: 44, spent: 26.8, progress: 52, risk: 76, level: 'High', issue: 'Possible duplicate work found 310 m away', updated: '1 hr ago', lat: 43, lng: 46, latitude: 18.910, longitude: 73.323 },
+  { id: 'MPL-AS-23711', title: 'Solar Drinking Water Facility', location: 'Bokakhat, Golaghat', state: 'Assam', district: 'Golaghat', constituency: 'Kaziranga', category: 'Water', agency: 'PHE Golaghat', sanctioned: 18, spent: 15.4, progress: 67, risk: 63, level: 'Moderate', issue: 'Completion delay probability is 74%', updated: '2 hrs ago', lat: 80, lng: 40, latitude: 26.640, longitude: 93.600 },
+  { id: 'MPL-TN-24220', title: 'Community Learning Centre', location: 'Ambattur, Chennai', state: 'Tamil Nadu', district: 'Chennai', constituency: 'Sriperumbudur', category: 'Community', agency: 'Greater Chennai Corporation', sanctioned: 36, spent: 18.1, progress: 55, risk: 28, level: 'Low', issue: 'No material irregularity detected', updated: '3 hrs ago', lat: 51, lng: 78, latitude: 13.114, longitude: 80.154 },
 ]
 
 export const trend = [

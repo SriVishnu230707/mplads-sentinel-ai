@@ -8,7 +8,7 @@ export type ApiUser = {
   email: string
   full_name: string
   role: 'ministry' | 'state' | 'district' | 'auditor' | 'field_officer' | 'mp'
-  organization: { id: string; name: string; level: string; state: string | null; district: string | null }
+  organization: { id: string; name: string; level: string; state: string | null; district: string | null; constituency?: string | null }
 }
 
 export type ApiProject = {
@@ -16,6 +16,7 @@ export type ApiProject = {
   title: string
   state: string
   district: string
+  constituency?: string | null
   location: string
   category: string
   agency: string

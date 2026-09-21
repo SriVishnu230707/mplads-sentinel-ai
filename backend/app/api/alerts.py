@@ -33,7 +33,7 @@ def list_alerts(
 @router.post("/risk/scan", response_model=ScanResult)
 def scan_projects(
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles(Role.MINISTRY, Role.STATE, Role.DISTRICT, Role.AUDITOR)),
+    user: User = Depends(require_roles(Role.MINISTRY, Role.STATE, Role.DISTRICT, Role.AUDITOR, Role.MP)),
 ) -> ScanResult:
     try:
         allowed = scan_limiter.allow(f"risk-scan:{user.id}")
@@ -76,7 +76,7 @@ def update_alert_status(
     alert_id: str,
     payload: AlertReviewRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles(Role.MINISTRY, Role.STATE, Role.DISTRICT, Role.AUDITOR)),
+    user: User = Depends(require_roles(Role.MINISTRY, Role.STATE, Role.DISTRICT, Role.AUDITOR, Role.MP)),
 ) -> Alert:
     scoped_project_ids = apply_project_scope(select(Project.id), user)
     alert = db.scalar(select(Alert).where(Alert.id == alert_id, Alert.project_id.in_(scoped_project_ids)))
