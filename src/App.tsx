@@ -2898,6 +2898,12 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: ApiUser) => 
     finally { setLoading(false) }
   }
 
+  const selectRole = (roleEmail: string) => {
+    setEmail(roleEmail)
+    setPassword('Sentinel@2026')
+    setError('')
+  }
+
   return <main className="login-page">
     <section className="login-visual">
       <div className="login-brand"><span><ShieldCheck size={24}/></span><div><strong>MPLADS</strong><small>Sentinel AI</small></div></div>
@@ -2911,11 +2917,11 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: ApiUser) => 
       <div className="demo-accounts-strip">
         <span>Quick role selection:</span>
         <div className="demo-role-pills">
-          <button type="button" onClick={() => setEmail('mp@sentinel.gov.in')} className={email === 'mp@sentinel.gov.in' ? 'active' : ''}>Hon'ble MP</button>
-          <button type="button" onClick={() => setEmail('ministry@sentinel.gov.in')} className={email === 'ministry@sentinel.gov.in' ? 'active' : ''}>Ministry</button>
-          <button type="button" onClick={() => setEmail('state@sentinel.gov.in')} className={email === 'state@sentinel.gov.in' ? 'active' : ''}>State</button>
-          <button type="button" onClick={() => setEmail('district@sentinel.gov.in')} className={email === 'district@sentinel.gov.in' ? 'active' : ''}>District</button>
-          <button type="button" onClick={() => setEmail('auditor@sentinel.gov.in')} className={email === 'auditor@sentinel.gov.in' ? 'active' : ''}>Auditor</button>
+          <button type="button" onClick={() => selectRole('mp@sentinel.gov.in')} className={email === 'mp@sentinel.gov.in' ? 'active' : ''}>Hon'ble MP</button>
+          <button type="button" onClick={() => selectRole('ministry@sentinel.gov.in')} className={email === 'ministry@sentinel.gov.in' ? 'active' : ''}>Ministry</button>
+          <button type="button" onClick={() => selectRole('state@sentinel.gov.in')} className={email === 'state@sentinel.gov.in' ? 'active' : ''}>State</button>
+          <button type="button" onClick={() => selectRole('district@sentinel.gov.in')} className={email === 'district@sentinel.gov.in' ? 'active' : ''}>District</button>
+          <button type="button" onClick={() => selectRole('auditor@sentinel.gov.in')} className={email === 'auditor@sentinel.gov.in' ? 'active' : ''}>Auditor</button>
         </div>
       </div>
 
