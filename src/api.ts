@@ -121,6 +121,76 @@ export type BiometricVerifyResult = {
   credentials: OfficialCredentials
 }
 
+export type ImmovableProperty = {
+  property_type: string
+  location: string
+  area_sqft?: string | number | null
+  estimated_value_lakh: number
+  ownership_status: string
+}
+
+export type MovableAssets = {
+  bank_deposits_lakh: number
+  vehicles_summary?: string | null
+  gold_jewellery_grams: number
+  investments_shares_lakh: number
+}
+
+export type MPRegistrationData = {
+  email: string
+  password: string
+  full_name: string
+  phone_number: string
+  dob: string
+  gender: string
+  blood_group?: string
+  father_or_spouse_name: string
+  permanent_address: string
+  present_address?: string
+
+  house: string
+  state: string
+  constituency: string
+  political_party: string
+  term_label: string
+
+  voter_id: string
+  voter_constituency_serial?: string
+  driving_license_no: string
+  driving_license_rto?: string
+  winning_certificate_no: string
+  winning_date: string
+  returning_officer_code?: string
+  community_certificate_no: string
+  community_category: string
+  community_issuing_authority?: string
+  birth_certificate_no: string
+  birth_place?: string
+  pan_number: string
+  aadhaar_number: string
+
+  immovable_properties: ImmovableProperty[]
+  movable_assets: MovableAssets
+  total_assets_lakh: number
+  liabilities_lakh: number
+  affidavit_eci_ref?: string
+
+  bank_name: string
+  bank_account_number: string
+  bank_ifsc: string
+  pfms_code?: string
+}
+
+export type MPRegistrationRecord = Omit<MPRegistrationData, 'password'> & {
+  id: string
+  status: 'pending' | 'approved' | 'rejected'
+  created_at: string
+  reviewed_at: string | null
+  reviewed_by: string | null
+  reviewer_remarks: string | null
+  rejection_reason: string | null
+}
+
 export const DEFAULT_OFFICIAL_CREDENTIALS: Record<string, Partial<OfficialCredentials>> = {
   mp: {
     pan_number: 'EEKSK8892E',
@@ -368,13 +438,182 @@ function getOfflineDelayPrediction(projectId: string): ApiDelayPrediction {
     project_id: projectId,
     delay_probability: prob,
     confidence: prob > 70 ? 'High Confidence (89%)' : 'Moderate Confidence (76%)',
+    disclaimer: 'Calculated using disbursement-to-progress variance model. For official early-warning scrutiny only.',
     factors: [
       'Financial disbursement velocity exceeds physical milestone verification',
       'Contractor historical completion slippage in current district',
       'Monsoon seasonal adjustment window factor',
     ],
-    disclaimer: 'AI early warning is an advisory indicator to guide field inspections and milestone verification.',
   }
+}
+
+export const DEFAULT_MP_REGISTRATIONS: MPRegistrationRecord[] = [
+  {
+    id: 'MP-REG-2026-0841',
+    email: 'shashi.tharoor@parliament.gov.in',
+    full_name: 'Dr. Shashi Tharoor',
+    phone_number: '9847012345',
+    dob: '1956-03-09',
+    gender: 'Male',
+    blood_group: 'O+',
+    father_or_spouse_name: 'Late Chandran Tharoor',
+    permanent_address: 'Pulapatta House, Thiruvananthapuram, Kerala - 695001',
+    present_address: '97, Lodhi Estate, New Delhi - 110003',
+    house: 'Lok Sabha',
+    state: 'Kerala',
+    constituency: 'Thiruvananthapuram',
+    political_party: 'Indian National Congress',
+    term_label: '18th Lok Sabha (2024-2029)',
+    voter_id: 'KL01019284',
+    voter_constituency_serial: 'Part 142, Sl 519',
+    driving_license_no: 'KL01 20120008492',
+    driving_license_rto: 'RTO Thiruvananthapuram (KL-01)',
+    winning_certificate_no: 'ECI-KL-2024-FORM21E-019',
+    winning_date: '2024-06-04',
+    returning_officer_code: 'RO-KL-20-TVM',
+    community_certificate_no: 'REV-KL-TVM-2019-90281',
+    community_category: 'General',
+    community_issuing_authority: 'Tahsildar, Thiruvananthapuram Taluk',
+    birth_certificate_no: 'MC-TVM-1956-0812',
+    birth_place: 'Thiruvananthapuram Registered',
+    pan_number: 'AABPT1956K',
+    aadhaar_number: '718293041928',
+    immovable_properties: [
+      {
+        property_type: 'Agricultural Land',
+        location: 'Sy. No. 104/2, Palakkad District, Kerala',
+        area_sqft: '3.5 Acres',
+        estimated_value_lakh: 180.0,
+        ownership_status: 'Self',
+      },
+      {
+        property_type: 'Residential Flat',
+        location: 'Apartment 4B, Kowdiar Heights, Thiruvananthapuram',
+        area_sqft: '2850 sq.ft',
+        estimated_value_lakh: 260.0,
+        ownership_status: 'Joint',
+      },
+      {
+        property_type: 'Commercial Building',
+        location: 'Constituency Public Liaison Office, MG Road, Thiruvananthapuram',
+        area_sqft: '1400 sq.ft',
+        estimated_value_lakh: 115.0,
+        ownership_status: 'Self',
+      },
+    ],
+    movable_assets: {
+      bank_deposits_lakh: 340.5,
+      vehicles_summary: 'Toyota Innova Crysta (KL-01-CB-1956)',
+      gold_jewellery_grams: 125.0,
+      investments_shares_lakh: 490.2,
+    },
+    total_assets_lakh: 1385.7,
+    liabilities_lakh: 42.0,
+    affidavit_eci_ref: 'https://affidavit.eci.gov.in/candidate-affidavit/2024/KL/20',
+    bank_name: 'State Bank of India, Parliament House Branch',
+    bank_account_number: '10928374619',
+    bank_ifsc: 'SBIN0000691',
+    pfms_code: 'PFMS-MP-00841',
+    status: 'pending',
+    created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+    reviewed_at: null,
+    reviewed_by: null,
+    reviewer_remarks: null,
+    rejection_reason: null,
+  },
+  {
+    id: 'MP-REG-2024-0018',
+    email: 'mp@sentinel.gov.in',
+    full_name: "Dr. K. Sudhakar",
+    phone_number: '9845012399',
+    dob: '1973-12-26',
+    gender: 'Male',
+    blood_group: 'B+',
+    father_or_spouse_name: 'P. N. Keshava Reddy',
+    permanent_address: 'Chikkaballapura / Bengaluru Rural, Karnataka - 562101',
+    present_address: 'Bungalow 14, Western Court, Janpath, New Delhi - 110001',
+    house: 'Lok Sabha',
+    state: 'Karnataka',
+    constituency: 'Bengaluru Rural',
+    political_party: 'Bharatiya Janata Party',
+    term_label: '18th Lok Sabha (2024-2029)',
+    voter_id: 'KA04991823',
+    voter_constituency_serial: 'Part 88, Sl 210',
+    driving_license_no: 'KA04 19990001824',
+    driving_license_rto: 'RTO Bengaluru Rural (KA-04)',
+    winning_certificate_no: 'ECI-KA-2024-FORM21E-023',
+    winning_date: '2024-06-04',
+    returning_officer_code: 'RO-KA-23-BLR',
+    community_certificate_no: 'REV-KA-BLR-2020-00918',
+    community_category: 'General',
+    community_issuing_authority: 'Tahsildar, Devanahalli',
+    birth_certificate_no: 'MC-BLR-1973-0981',
+    birth_place: 'Bengaluru, Karnataka',
+    pan_number: 'EEKSK8892E',
+    aadhaar_number: '541928371928',
+    immovable_properties: [
+      {
+        property_type: 'Agricultural Land',
+        location: 'Devanahalli Taluk, Bengaluru Rural',
+        area_sqft: '4.8 Acres',
+        estimated_value_lakh: 310.0,
+        ownership_status: 'Self',
+      },
+      {
+        property_type: 'Residential House',
+        location: 'Sadashivanagar, Bengaluru',
+        area_sqft: '4200 sq.ft',
+        estimated_value_lakh: 750.0,
+        ownership_status: 'Joint',
+      },
+    ],
+    movable_assets: {
+      bank_deposits_lakh: 195.0,
+      vehicles_summary: 'Toyota Fortuner (KA-04-KS-0001)',
+      gold_jewellery_grams: 210.0,
+      investments_shares_lakh: 340.0,
+    },
+    total_assets_lakh: 1805.0,
+    liabilities_lakh: 65.0,
+    affidavit_eci_ref: 'https://affidavit.eci.gov.in/candidate-affidavit/2024/KA/23',
+    bank_name: 'State Bank of India (Parliament House Branch)',
+    bank_account_number: '10029384719',
+    bank_ifsc: 'SBIN0000691',
+    pfms_code: 'PFMS-MP-00518',
+    status: 'approved',
+    created_at: new Date(Date.now() - 90 * 86400000).toISOString(),
+    reviewed_at: new Date(Date.now() - 88 * 86400000).toISOString(),
+    reviewed_by: 'demo-ministry',
+    reviewer_remarks: 'Verified against ECI Gazette and Parliamentary Registry',
+    rejection_reason: null,
+  },
+]
+
+function getOfflineMPRegistrations(): MPRegistrationRecord[] {
+  try {
+    const raw = localStorage.getItem('sentinel_mp_registrations')
+    if (raw) return JSON.parse(raw)
+  } catch {}
+  return [...DEFAULT_MP_REGISTRATIONS]
+}
+
+function saveOfflineMPRegistrations(list: MPRegistrationRecord[]) {
+  try {
+    localStorage.setItem('sentinel_mp_registrations', JSON.stringify(list))
+  } catch {}
+}
+
+function saveOfflinePendingPassword(email: string, pass: string) {
+  try {
+    localStorage.setItem(`sentinel_pending_pass_${email.toLowerCase()}`, pass)
+  } catch {}
+}
+
+function getOfflinePendingPassword(email: string): string | null {
+  try {
+    return localStorage.getItem(`sentinel_pending_pass_${email.toLowerCase()}`)
+  } catch {}
+  return null
 }
 
 let accessToken: string | null = null
@@ -774,6 +1013,138 @@ export const api = {
         unlock_token: token,
         credentials: creds,
       }
+    }
+  },
+
+  async submitMPRegistration(data: MPRegistrationData): Promise<MPRegistrationRecord> {
+    try {
+      return await request<MPRegistrationRecord>('/auth/mp-registration', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }, false)
+    } catch {
+      const list = getOfflineMPRegistrations()
+      const newRecord: MPRegistrationRecord = {
+        ...data,
+        id: `MP-REG-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        reviewed_at: null,
+        reviewed_by: null,
+        reviewer_remarks: null,
+        rejection_reason: null,
+      }
+      delete (newRecord as any).password
+      list.unshift(newRecord)
+      saveOfflineMPRegistrations(list)
+      saveOfflinePendingPassword(data.email, data.password)
+      return newRecord
+    }
+  },
+
+  async checkMPRegistrationStatus(refId?: string, email?: string): Promise<{
+    id: string
+    email: string
+    full_name: string
+    constituency: string
+    status: 'pending' | 'approved' | 'rejected'
+    created_at: string
+    reviewed_at: string | null
+    reviewer_remarks: string | null
+    rejection_reason: string | null
+  }> {
+    try {
+      const params = new URLSearchParams()
+      if (refId) params.set('ref_id', refId)
+      if (email) params.set('email', email)
+      return await request(`/auth/mp-registration/status?${params.toString()}`, {}, false)
+    } catch {
+      const list = getOfflineMPRegistrations()
+      const found = list.find(r => (refId && r.id === refId) || (email && r.email.toLowerCase() === email.toLowerCase()))
+      if (!found) throw new Error('No application found for given details')
+      return {
+        id: found.id,
+        email: found.email,
+        full_name: found.full_name,
+        constituency: found.constituency,
+        status: found.status,
+        created_at: found.created_at,
+        reviewed_at: found.reviewed_at,
+        reviewer_remarks: found.reviewer_remarks,
+        rejection_reason: found.rejection_reason,
+      }
+    }
+  },
+
+  async getMinistryMPRegistrations(statusFilter?: string): Promise<MPRegistrationRecord[]> {
+    try {
+      const q = statusFilter && statusFilter !== 'all' ? `?status=${encodeURIComponent(statusFilter)}` : ''
+      return await request<MPRegistrationRecord[]>(`/ministry/mp-registrations${q}`)
+    } catch {
+      let list = getOfflineMPRegistrations()
+      if (statusFilter && statusFilter !== 'all') {
+        list = list.filter(r => r.status === statusFilter)
+      }
+      return list
+    }
+  },
+
+  async approveMPRegistration(requestId: string, remarks?: string): Promise<MPRegistrationRecord> {
+    try {
+      return await request<MPRegistrationRecord>(`/ministry/mp-registrations/${encodeURIComponent(requestId)}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ remarks }),
+      })
+    } catch {
+      const list = getOfflineMPRegistrations()
+      const found = list.find(r => r.id === requestId)
+      if (!found) throw new Error('Registration request not found')
+      found.status = 'approved'
+      found.reviewed_at = new Date().toISOString()
+      found.reviewed_by = 'demo-ministry'
+      found.reviewer_remarks = remarks || 'Approved by Ministry of Statistics & PI'
+      saveOfflineMPRegistrations(list)
+
+      // Provision offline demo account
+      const pass = getOfflinePendingPassword(found.email) || 'Sentinel@2026'
+      DEMO_ACCOUNTS[found.email.toLowerCase()] = {
+        password: pass,
+        user: {
+          id: `mp-${found.id}`,
+          email: found.email.toLowerCase(),
+          full_name: `${found.full_name} (Hon'ble MP)`,
+          role: 'mp',
+          organization: {
+            id: `org-${found.id}`,
+            name: `Office of Hon'ble MP - ${found.constituency}`,
+            level: 'district',
+            state: found.state,
+            district: found.constituency,
+            constituency: found.constituency,
+          },
+        },
+      }
+      return found
+    }
+  },
+
+  async rejectMPRegistration(requestId: string, reason: string, remarks?: string): Promise<MPRegistrationRecord> {
+    try {
+      return await request<MPRegistrationRecord>(`/ministry/mp-registrations/${encodeURIComponent(requestId)}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason, remarks }),
+      })
+    } catch {
+      const list = getOfflineMPRegistrations()
+      const found = list.find(r => r.id === requestId)
+      if (!found) throw new Error('Registration request not found')
+      found.status = 'rejected'
+      found.reviewed_at = new Date().toISOString()
+      found.reviewed_by = 'demo-ministry'
+      found.rejection_reason = reason
+      found.reviewer_remarks = remarks || null
+      saveOfflineMPRegistrations(list)
+      return found
     }
   },
 

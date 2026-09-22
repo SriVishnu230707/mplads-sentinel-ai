@@ -4,7 +4,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .intelligence import snapshot
-from .models import OrgLevel, Organization, Project, RiskSnapshot, Role, User
+from .models import (
+    MPRegistrationRequest,
+    MPRegistrationStatus,
+    OrgLevel,
+    Organization,
+    Project,
+    RiskSnapshot,
+    Role,
+    User,
+)
 from .risk_engine import evaluate
 from .security import hash_password, verify_password
 
@@ -96,4 +105,80 @@ def seed_demo_data(db: Session) -> None:
             db.add(snapshot(project, now - timedelta(days=60)))
             db.add(snapshot(project, now - timedelta(days=30)))
             db.add(snapshot(project, now))
+
+    # Seed demo MP registration requests if table is empty
+    existing_requests = db.scalars(select(MPRegistrationRequest.id)).all()
+    if not existing_requests:
+        pending_mp = MPRegistrationRequest(
+            id="MP-REG-2026-0841",
+            email="shashi.tharoor@parliament.gov.in",
+            full_name="Dr. Shashi Tharoor",
+            password_hash=hash_password(DEMO_PASSWORD),
+            phone_number="9847012345",
+            dob=date(1956, 3, 9),
+            gender="Male",
+            blood_group="O+",
+            father_or_spouse_name="Late Chandran Tharoor",
+            permanent_address="Pulapatta House, Thiruvananthapuram, Kerala - 695001",
+            present_address="97, Lodhi Estate, New Delhi - 110003",
+            house="Lok Sabha",
+            state="Kerala",
+            constituency="Thiruvananthapuram",
+            political_party="Indian National Congress",
+            term_label="18th Lok Sabha (2024-2029)",
+            voter_id="KL01019284",
+            voter_constituency_serial="Part 142, Sl 519",
+            driving_license_no="KL01 20120008492",
+            driving_license_rto="RTO Thiruvananthapuram (KL-01)",
+            winning_certificate_no="ECI-KL-2024-FORM21E-019",
+            winning_date=date(2024, 6, 4),
+            returning_officer_code="RO-KL-20-TVM",
+            community_certificate_no="REV-KL-TVM-2019-90281",
+            community_category="General",
+            community_issuing_authority="Tahsildar, Thiruvananthapuram Taluk",
+            birth_certificate_no="MC-TVM-1956-0812",
+            birth_place="Thiruvananthapuram Registered",
+            pan_number="AABPT1956K",
+            aadhaar_number="718293041928",
+            immovable_properties=[
+                {
+                    "property_type": "Agricultural Land",
+                    "location": "Sy. No. 104/2, Palakkad District, Kerala",
+                    "area_sqft": "3.5 Acres",
+                    "estimated_value_lakh": 180.0,
+                    "ownership_status": "Self",
+                },
+                {
+                    "property_type": "Residential Flat",
+                    "location": "Apartment 4B, Kowdiar Heights, Thiruvananthapuram",
+                    "area_sqft": "2850 sq.ft",
+                    "estimated_value_lakh": 260.0,
+                    "ownership_status": "Joint",
+                },
+                {
+                    "property_type": "Commercial Building",
+                    "location": "Constituency Public Liaison Office, MG Road, Thiruvananthapuram",
+                    "area_sqft": "1400 sq.ft",
+                    "estimated_value_lakh": 115.0,
+                    "ownership_status": "Self",
+                },
+            ],
+            movable_assets={
+                "bank_deposits_lakh": 340.5,
+                "vehicles_summary": "Toyota Innova Crysta (KL-01-CB-1956)",
+                "gold_jewellery_grams": 125.0,
+                "investments_shares_lakh": 490.2,
+            },
+            total_assets_lakh=1385.7,
+            liabilities_lakh=42.0,
+            affidavit_eci_ref="https://affidavit.eci.gov.in/candidate-affidavit/2024/KL/20",
+            bank_name="State Bank of India, Parliament House Branch",
+            bank_account_number="10928374619",
+            bank_ifsc="SBIN0000691",
+            pfms_code="PFMS-MP-00841",
+            status=MPRegistrationStatus.PENDING,
+            created_at=now - timedelta(days=2),
+        )
+        db.add(pending_mp)
+
     db.commit()

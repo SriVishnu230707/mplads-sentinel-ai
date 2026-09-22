@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from sqlalchemy import text
 
-from .api import alerts, audit, auth, cases, dashboard, imports, projects, reports
+from .api import alerts, audit, auth, cases, dashboard, imports, mp_approvals, projects, reports
 from .config import settings
 from .database import Base, SessionLocal, engine
 from .rate_limit import redis_backend
@@ -118,3 +118,4 @@ app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(imports.router, prefix="/api/v1")
 app.include_router(cases.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
+app.include_router(mp_approvals.router, prefix="/api/v1")

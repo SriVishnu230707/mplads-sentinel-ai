@@ -1154,3 +1154,792 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================================
+   MP ONBOARDING & MINISTRY STATUTORY APPROVALS SYSTEM
+   ========================================================================== */
+
+.mp-apply-card {
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(39, 128, 108, 0.08), rgba(22, 101, 82, 0.03));
+  border: 1px solid rgba(39, 128, 108, 0.25);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mp-apply-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mp-apply-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(39, 128, 108, 0.15);
+  color: #1a6f5c;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.dark .mp-apply-icon {
+  background: rgba(81, 190, 157, 0.2);
+  color: #6ee7b7;
+}
+.mp-apply-text strong {
+  display: block;
+  font: 700 12px 'Manrope', sans-serif;
+  color: var(--text);
+}
+.mp-apply-text p {
+  margin: 2px 0 0;
+  font-size: 10.5px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.mp-apply-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+.mp-apply-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  font: 700 11px 'Manrope', sans-serif;
+  border-radius: 8px;
+  background: #166552;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.mp-apply-btn:hover {
+  background: #0e4c3c;
+  transform: translateY(-1px);
+}
+.mp-track-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 36px;
+  padding: 0 12px;
+  font: 700 11px 'Manrope', sans-serif;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.mp-track-btn:hover {
+  background: var(--canvas);
+}
+
+/* Modal Overlay & Container */
+.mp-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 25, 21, 0.7);
+  backdrop-filter: blur(8px);
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow-y: auto;
+  animation: fade-in 0.2s ease-out;
+}
+.mp-modal-box {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  width: min(920px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.mp-modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(to right, rgba(39, 128, 108, 0.08), transparent);
+}
+.mp-modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.mp-modal-badge-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #105c4e, #09382f);
+  color: #51be9d;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 12px rgba(16, 92, 78, 0.25);
+}
+.mp-modal-header-left h2 {
+  font: 800 18px 'Manrope', sans-serif;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.mp-modal-header-left p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.mp-close-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.mp-close-btn:hover {
+  color: var(--text);
+  background: var(--canvas);
+}
+
+/* Stepper Bar */
+.mp-stepper-bar {
+  display: flex;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--line);
+  padding: 10px 18px;
+  gap: 8px;
+  overflow-x: auto;
+}
+.mp-step-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: 700 11px 'Manrope', sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.mp-step-btn.active {
+  background: var(--surface);
+  color: #1a6f5c;
+  border-color: rgba(39, 128, 108, 0.3);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+.dark .mp-step-btn.active {
+  color: #51be9d;
+}
+.mp-step-btn.completed {
+  color: var(--text);
+}
+.mp-step-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  background: rgba(0, 0, 0, 0.08);
+}
+.dark .mp-step-num {
+  background: rgba(255, 255, 255, 0.1);
+}
+.mp-step-btn.active .mp-step-num {
+  background: #166552;
+  color: white;
+}
+.dark .mp-step-btn.active .mp-step-num {
+  background: #27806c;
+}
+.mp-step-btn.completed .mp-step-num {
+  background: rgba(39, 128, 108, 0.2);
+  color: #166552;
+}
+.dark .mp-step-btn.completed .mp-step-num {
+  color: #51be9d;
+}
+
+/* Modal Body & Forms */
+.mp-modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+.mp-form-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.mp-form-section-title h3 {
+  font: 800 15px 'Manrope', sans-serif;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mp-prefill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font: 700 10.5px 'Manrope', sans-serif;
+  background: rgba(39, 128, 108, 0.12);
+  color: #1a6f5c;
+  border: 1px solid rgba(39, 128, 108, 0.25);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.mp-prefill-btn:hover {
+  background: rgba(39, 128, 108, 0.22);
+}
+.dark .mp-prefill-btn {
+  color: #51be9d;
+}
+.mp-form-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px 18px;
+}
+.mp-form-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px 18px;
+}
+.mp-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mp-field-group.full-width {
+  grid-column: 1 / -1;
+}
+.mp-field-group label {
+  font: 700 10.5px 'Manrope', sans-serif;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mp-field-group label small {
+  font-weight: 500;
+  text-transform: none;
+  color: var(--muted);
+}
+.mp-field-input {
+  height: 42px;
+  padding: 0 13px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font: 500 12px 'Inter', sans-serif;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.mp-field-input:focus {
+  border-color: #27806c;
+  box-shadow: 0 0 0 3px rgba(39, 128, 108, 0.12);
+}
+textarea.mp-field-input {
+  height: 72px;
+  padding: 10px 13px;
+  resize: vertical;
+}
+select.mp-field-input {
+  cursor: pointer;
+}
+
+/* Statutory Documents Inspection Cards */
+.mp-doc-alert {
+  padding: 12px 14px;
+  background: rgba(224, 170, 56, 0.1);
+  border: 1px solid rgba(224, 170, 56, 0.3);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.mp-doc-alert strong {
+  color: #b07d17;
+}
+.dark .mp-doc-alert strong {
+  color: #facc15;
+}
+
+/* Properties & Asset Declarations Table */
+.mp-props-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--canvas);
+  padding: 16px;
+  margin-top: 10px;
+}
+.mp-props-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.mp-props-header h4 {
+  margin: 0;
+  font: 700 13px 'Manrope', sans-serif;
+}
+.mp-add-prop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  font: 700 10.5px 'Manrope', sans-serif;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.mp-add-prop-btn:hover {
+  background: rgba(39, 128, 108, 0.1);
+  border-color: #27806c;
+}
+.mp-props-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.mp-props-table th {
+  text-align: left;
+  padding: 8px 10px;
+  font: 800 9.5px 'Manrope', sans-serif;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--line);
+}
+.mp-props-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.mp-props-table input,
+.mp-props-table select {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font: 500 11px 'Inter', sans-serif;
+}
+
+/* Modal Footer */
+.mp-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--canvas);
+}
+.mp-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mp-modal-btn {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font: 700 12px 'Manrope', sans-serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+.mp-modal-btn.secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--line);
+}
+.mp-modal-btn.secondary:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+.mp-modal-btn.primary {
+  background: #166552;
+  color: white;
+}
+.mp-modal-btn.primary:hover:not(:disabled) {
+  background: #0e4c3c;
+}
+.mp-modal-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* Submission Confirmation Success Screen */
+.mp-success-screen {
+  padding: 30px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.mp-success-badge {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(39, 128, 108, 0.15);
+  color: #1a6f5c;
+  display: grid;
+  place-items: center;
+}
+.dark .mp-success-badge {
+  background: rgba(81, 190, 157, 0.2);
+  color: #51be9d;
+}
+.mp-ref-box {
+  padding: 16px 24px;
+  background: var(--canvas);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+.mp-ref-box span {
+  font: 700 10px 'Manrope', sans-serif;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.mp-ref-box strong {
+  font: 800 20px 'Manrope', sans-serif;
+  color: #166552;
+  letter-spacing: 0.05em;
+}
+.dark .mp-ref-box strong {
+  color: #51be9d;
+}
+
+/* Ministry Approvals Queue View */
+.mp-approvals-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.mp-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.mp-kpi-card {
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.mp-kpi-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.mp-kpi-icon.pending {
+  background: rgba(224, 170, 56, 0.15);
+  color: #b07d17;
+}
+.mp-kpi-icon.approved {
+  background: rgba(39, 128, 108, 0.15);
+  color: #1a6f5c;
+}
+.mp-kpi-icon.rejected {
+  background: rgba(174, 61, 54, 0.15);
+  color: #ae3d36;
+}
+.mp-kpi-icon.total {
+  background: rgba(60, 100, 180, 0.15);
+  color: #3b82f6;
+}
+.mp-kpi-info span {
+  display: block;
+  font: 700 10.5px 'Manrope', sans-serif;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mp-kpi-info strong {
+  font: 800 22px 'Manrope', sans-serif;
+  color: var(--text);
+}
+
+/* Approvals Table Card */
+.mp-table-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.mp-table-toolbar {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.mp-filter-tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--canvas);
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+.mp-filter-tab {
+  padding: 6px 12px;
+  font: 700 11px 'Manrope', sans-serif;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.mp-filter-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+.mp-table-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--canvas);
+  color: var(--text);
+  width: 260px;
+}
+.mp-table-search input {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: 500 11.5px 'Inter', sans-serif;
+  width: 100%;
+}
+
+.mp-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font: 800 10px 'Manrope', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.mp-status-pill.pending {
+  background: rgba(224, 170, 56, 0.15);
+  color: #b07d17;
+  border: 1px solid rgba(224, 170, 56, 0.3);
+}
+.dark .mp-status-pill.pending {
+  color: #facc15;
+}
+.mp-status-pill.approved {
+  background: rgba(39, 128, 108, 0.15);
+  color: #1a6f5c;
+  border: 1px solid rgba(39, 128, 108, 0.3);
+}
+.dark .mp-status-pill.approved {
+  color: #51be9d;
+}
+.mp-status-pill.rejected {
+  background: rgba(174, 61, 54, 0.15);
+  color: #ae3d36;
+  border: 1px solid rgba(174, 61, 54, 0.3);
+}
+
+/* Dossier Detail Drawer */
+.mp-dossier-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(620px, 94vw);
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  z-index: 1050;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.25);
+  animation: slide-left 0.2s ease-out;
+}
+@keyframes slide-left {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.mp-dossier-hero {
+  padding: 24px;
+  background: linear-gradient(135deg, rgba(39, 128, 108, 0.12), rgba(22, 101, 82, 0.04));
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.mp-dossier-hero-left {
+  display: flex;
+  gap: 16px;
+}
+.mp-dossier-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #105c4e, #0b4037);
+  color: white;
+  font: 800 22px 'Manrope', sans-serif;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 12px rgba(16, 92, 78, 0.25);
+}
+.mp-dossier-titles h2 {
+  margin: 0;
+  font: 800 19px 'Manrope', sans-serif;
+  letter-spacing: -0.02em;
+}
+.mp-dossier-titles p {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.mp-dossier-tabs {
+  display: flex;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--line);
+  padding: 0 16px;
+  overflow-x: auto;
+}
+.mp-dossier-tab-btn {
+  padding: 12px 14px;
+  font: 700 11.5px 'Manrope', sans-serif;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mp-dossier-tab-btn.active {
+  color: #1a6f5c;
+  border-bottom-color: #1a6f5c;
+}
+.dark .mp-dossier-tab-btn.active {
+  color: #51be9d;
+  border-bottom-color: #51be9d;
+}
+.mp-dossier-content {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.mp-dossier-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mp-dossier-section h4 {
+  margin: 0;
+  font: 800 12px 'Manrope', sans-serif;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.mp-info-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.mp-info-item {
+  padding: 10px 12px;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mp-info-item span {
+  font: 700 9.5px 'Manrope', sans-serif;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.mp-info-item strong {
+  font: 600 12px 'Inter', sans-serif;
+  color: var(--text);
+  word-break: break-word;
+}
+.mp-info-item.highlight {
+  background: rgba(39, 128, 108, 0.08);
+  border-color: rgba(39, 128, 108, 0.25);
+}
+.mp-dossier-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--line);
+  background: var(--canvas);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+@media (max-width: 860px) {
+  .mp-form-grid-2,
+  .mp-form-grid-3,
+  .mp-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
