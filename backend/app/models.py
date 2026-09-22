@@ -54,6 +54,12 @@ class CaseStatus(str, enum.Enum):
     CLOSED = "closed"
 
 
+class MPRegistrationStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class Organization(Base):
     __tablename__ = "organizations"
 
@@ -218,3 +224,65 @@ class AuditEvent(Base):
     outcome: Mapped[str] = mapped_column(String(30), default="success")
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class MPRegistrationRequest(Base):
+    __tablename__ = "mp_registration_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    email: Mapped[str] = mapped_column(String(254), index=True)
+    full_name: Mapped[str] = mapped_column(String(120))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    phone_number: Mapped[str] = mapped_column(String(20))
+    dob: Mapped[date] = mapped_column(Date)
+    gender: Mapped[str] = mapped_column(String(20))
+    blood_group: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    father_or_spouse_name: Mapped[str] = mapped_column(String(120))
+    permanent_address: Mapped[str] = mapped_column(Text)
+    present_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Parliamentary Representation
+    house: Mapped[str] = mapped_column(String(30), default="Lok Sabha")
+    state: Mapped[str] = mapped_column(String(80), index=True)
+    constituency: Mapped[str] = mapped_column(String(100), index=True)
+    political_party: Mapped[str] = mapped_column(String(120))
+    term_label: Mapped[str] = mapped_column(String(80), default="18th Lok Sabha (2024-2029)")
+
+    # Statutory Identity & Verification Documents
+    voter_id: Mapped[str] = mapped_column(String(30), index=True)
+    voter_constituency_serial: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    driving_license_no: Mapped[str] = mapped_column(String(40))
+    driving_license_rto: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    winning_certificate_no: Mapped[str] = mapped_column(String(60), index=True)
+    winning_date: Mapped[date] = mapped_column(Date)
+    returning_officer_code: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    community_certificate_no: Mapped[str] = mapped_column(String(60))
+    community_category: Mapped[str] = mapped_column(String(40))
+    community_issuing_authority: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    birth_certificate_no: Mapped[str] = mapped_column(String(60))
+    birth_place: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    pan_number: Mapped[str] = mapped_column(String(10), index=True)
+    aadhaar_number: Mapped[str] = mapped_column(String(16))
+
+    # Asset & Property Declarations
+    immovable_properties: Mapped[list] = mapped_column(JSON, default=list)
+    movable_assets: Mapped[dict] = mapped_column(JSON, default=dict)
+    total_assets_lakh: Mapped[float] = mapped_column(Float, default=0.0)
+    liabilities_lakh: Mapped[float] = mapped_column(Float, default=0.0)
+    affidavit_eci_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Banking & PFMS for MPLADS
+    bank_name: Mapped[str] = mapped_column(String(120))
+    bank_account_number: Mapped[str] = mapped_column(String(30))
+    bank_ifsc: Mapped[str] = mapped_column(String(15))
+    pfms_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    # Workflow & Ministry Approval
+    status: Mapped[MPRegistrationStatus] = mapped_column(
+        Enum(MPRegistrationStatus), default=MPRegistrationStatus.PENDING, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewer_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from .models import AlertStatus, CaseStatus, OrgLevel, RiskLevel, Role
+from .models import AlertStatus, CaseStatus, MPRegistrationStatus, OrgLevel, RiskLevel, Role
 
 
 class LoginRequest(BaseModel):
@@ -234,3 +234,137 @@ class BiometricVerifyResponse(BaseModel):
     message: str
     unlock_token: str
     credentials: OfficialCredentialsOut
+
+
+class ImmovablePropertyItem(BaseModel):
+    property_type: str
+    location: str
+    area_sqft: str | float | None = None
+    estimated_value_lakh: float = Field(ge=0)
+    ownership_status: str = "Self"
+
+
+class MovableAssetsSummary(BaseModel):
+    bank_deposits_lakh: float = Field(default=0.0, ge=0)
+    vehicles_summary: str | None = None
+    gold_jewellery_grams: float = Field(default=0.0, ge=0)
+    investments_shares_lakh: float = Field(default=0.0, ge=0)
+
+
+class MPRegistrationCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str = Field(min_length=3, max_length=120)
+    phone_number: str = Field(pattern=r"^[6-9]\d{9}$")
+    dob: date
+    gender: str = Field(pattern=r"^(Male|Female|Other)$")
+    blood_group: str | None = Field(default=None, max_length=10)
+    father_or_spouse_name: str = Field(min_length=2, max_length=120)
+    permanent_address: str = Field(min_length=5, max_length=1000)
+    present_address: str | None = Field(default=None, max_length=1000)
+
+    house: str = Field(default="Lok Sabha", pattern=r"^(Lok Sabha|Rajya Sabha)$")
+    state: str = Field(min_length=2, max_length=80)
+    constituency: str = Field(min_length=2, max_length=100)
+    political_party: str = Field(min_length=2, max_length=120)
+    term_label: str = Field(default="18th Lok Sabha (2024-2029)", max_length=80)
+
+    voter_id: str = Field(min_length=6, max_length=30)
+    voter_constituency_serial: str | None = Field(default=None, max_length=50)
+    driving_license_no: str = Field(min_length=6, max_length=40)
+    driving_license_rto: str | None = Field(default=None, max_length=100)
+    winning_certificate_no: str = Field(min_length=3, max_length=60)
+    winning_date: date
+    returning_officer_code: str | None = Field(default=None, max_length=60)
+    community_certificate_no: str = Field(min_length=3, max_length=60)
+    community_category: str = Field(default="General", max_length=40)
+    community_issuing_authority: str | None = Field(default=None, max_length=120)
+    birth_certificate_no: str = Field(min_length=3, max_length=60)
+    birth_place: str | None = Field(default=None, max_length=120)
+    pan_number: str = Field(pattern=r"^[A-Z]{5}[0-9]{4}[A-Z]$")
+    aadhaar_number: str = Field(pattern=r"^\d{12}$")
+
+    immovable_properties: list[ImmovablePropertyItem] = Field(default_factory=list)
+    movable_assets: MovableAssetsSummary = Field(default_factory=MovableAssetsSummary)
+    total_assets_lakh: float = Field(ge=0, default=0.0)
+    liabilities_lakh: float = Field(ge=0, default=0.0)
+    affidavit_eci_ref: str | None = Field(default=None, max_length=255)
+
+    bank_name: str = Field(min_length=3, max_length=120)
+    bank_account_number: str = Field(min_length=8, max_length=30)
+    bank_ifsc: str = Field(pattern=r"^[A-Z]{4}0[A-Z0-9]{6}$")
+    pfms_code: str | None = Field(default=None, max_length=40)
+
+
+class MPRegistrationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    email: EmailStr
+    full_name: str
+    phone_number: str
+    dob: date
+    gender: str
+    blood_group: str | None = None
+    father_or_spouse_name: str
+    permanent_address: str
+    present_address: str | None = None
+
+    house: str
+    state: str
+    constituency: str
+    political_party: str
+    term_label: str
+
+    voter_id: str
+    voter_constituency_serial: str | None = None
+    driving_license_no: str
+    driving_license_rto: str | None = None
+    winning_certificate_no: str
+    winning_date: date
+    returning_officer_code: str | None = None
+    community_certificate_no: str
+    community_category: str
+    community_issuing_authority: str | None = None
+    birth_certificate_no: str
+    birth_place: str | None = None
+    pan_number: str
+    aadhaar_number: str
+
+    immovable_properties: list[dict]
+    movable_assets: dict
+    total_assets_lakh: float
+    liabilities_lakh: float
+    affidavit_eci_ref: str | None = None
+
+    bank_name: str
+    bank_account_number: str
+    bank_ifsc: str
+    pfms_code: str | None = None
+
+    status: MPRegistrationStatus
+    created_at: datetime
+    reviewed_at: datetime | None = None
+    reviewed_by: str | None = None
+    reviewer_remarks: str | None = None
+    rejection_reason: str | None = None
+
+
+class MPRegistrationStatusCheck(BaseModel):
+    id: str
+    email: str
+    full_name: str
+    constituency: str
+    status: MPRegistrationStatus
+    created_at: datetime
+    reviewed_at: datetime | None = None
+    reviewer_remarks: str | None = None
+    rejection_reason: str | None = None
+
+
+class MPApprovalAction(BaseModel):
+    remarks: str | None = Field(default=None, max_length=1000)
+
+
+class MPRejectionAction(BaseModel):
+    reason: str = Field(min_length=5, max_length=1000)
+    remarks: str | None = Field(default=None, max_length=1000)

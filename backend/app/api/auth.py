@@ -10,13 +10,16 @@ from ..audit import record_event
 from ..config import settings
 from ..database import get_db
 from ..dependencies import get_current_user
-from ..models import RefreshSession, User
+from ..models import MPRegistrationRequest, MPRegistrationStatus, RefreshSession, User
 from ..rate_limit import RateLimitUnavailable, login_attempt_limiter
 from ..schemas import (
     AccessToken,
     BiometricVerifyRequest,
     BiometricVerifyResponse,
     LoginRequest,
+    MPRegistrationCreate,
+    MPRegistrationOut,
+    MPRegistrationStatusCheck,
     OfficialCredentialsOut,
     UpdateCredentialsRequest,
     UserOut,
@@ -27,6 +30,7 @@ from ..security import (
     create_biometric_unlock_token,
     create_refresh_token,
     decode_token,
+    hash_password,
     hash_token,
     verify_password,
 )
@@ -242,4 +246,141 @@ def biometric_verify(
         message="Biometric authentication verified via UIDAI registered biometric vault",
         unlock_token=unlock_token,
         credentials=to_credentials_out(user, is_unlocked=True),
+    )
+
+
+@router.post("/mp-registration", response_model=MPRegistrationOut, status_code=status.HTTP_201_CREATED)
+def register_mp_account(
+    payload: MPRegistrationCreate,
+    db: Session = Depends(get_db),
+) -> MPRegistrationRequest:
+    normalized_email = payload.email.strip().lower()
+
+    # Check if user with this email already exists
+    existing_user = db.scalar(select(User).where(User.email == normalized_email))
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An official account is already registered with this email address.",
+        )
+
+    # Check if pending request with this email already exists
+    existing_pending = db.scalar(
+        select(MPRegistrationRequest).where(
+            MPRegistrationRequest.email == normalized_email,
+            MPRegistrationRequest.status == MPRegistrationStatus.PENDING,
+        )
+    )
+    if existing_pending:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An MP onboarding application with this email is already awaiting Ministry approval.",
+        )
+
+    # Check if pending request with this voter ID already exists
+    existing_voter = db.scalar(
+        select(MPRegistrationRequest).where(
+            MPRegistrationRequest.voter_id == payload.voter_id.strip().upper(),
+            MPRegistrationRequest.status == MPRegistrationStatus.PENDING,
+        )
+    )
+    if existing_voter:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A registration application with this Voter ID is already pending review.",
+        )
+
+    immovable_list = [prop.model_dump() for prop in payload.immovable_properties]
+    movable_dict = payload.movable_assets.model_dump()
+
+    registration = MPRegistrationRequest(
+        email=normalized_email,
+        full_name=payload.full_name.strip(),
+        password_hash=hash_password(payload.password),
+        phone_number=payload.phone_number.strip(),
+        dob=payload.dob,
+        gender=payload.gender,
+        blood_group=payload.blood_group,
+        father_or_spouse_name=payload.father_or_spouse_name.strip(),
+        permanent_address=payload.permanent_address.strip(),
+        present_address=payload.present_address.strip() if payload.present_address else None,
+        house=payload.house,
+        state=payload.state.strip(),
+        constituency=payload.constituency.strip(),
+        political_party=payload.political_party.strip(),
+        term_label=payload.term_label.strip(),
+        voter_id=payload.voter_id.strip().upper(),
+        voter_constituency_serial=payload.voter_constituency_serial.strip() if payload.voter_constituency_serial else None,
+        driving_license_no=payload.driving_license_no.strip().upper(),
+        driving_license_rto=payload.driving_license_rto.strip() if payload.driving_license_rto else None,
+        winning_certificate_no=payload.winning_certificate_no.strip(),
+        winning_date=payload.winning_date,
+        returning_officer_code=payload.returning_officer_code.strip() if payload.returning_officer_code else None,
+        community_certificate_no=payload.community_certificate_no.strip(),
+        community_category=payload.community_category.strip(),
+        community_issuing_authority=payload.community_issuing_authority.strip() if payload.community_issuing_authority else None,
+        birth_certificate_no=payload.birth_certificate_no.strip(),
+        birth_place=payload.birth_place.strip() if payload.birth_place else None,
+        pan_number=payload.pan_number.strip().upper(),
+        aadhaar_number=payload.aadhaar_number.strip(),
+        immovable_properties=immovable_list,
+        movable_assets=movable_dict,
+        total_assets_lakh=payload.total_assets_lakh,
+        liabilities_lakh=payload.liabilities_lakh,
+        affidavit_eci_ref=payload.affidavit_eci_ref.strip() if payload.affidavit_eci_ref else None,
+        bank_name=payload.bank_name.strip(),
+        bank_account_number=payload.bank_account_number.strip(),
+        bank_ifsc=payload.bank_ifsc.strip().upper(),
+        pfms_code=payload.pfms_code.strip() if payload.pfms_code else None,
+        status=MPRegistrationStatus.PENDING,
+    )
+    db.add(registration)
+    db.flush()
+
+    record_event(
+        db,
+        action="auth.mp_registration_submitted",
+        entity_type="mp_registration",
+        entity_id=registration.id,
+        details={
+            "full_name": registration.full_name,
+            "constituency": registration.constituency,
+            "state": registration.state,
+            "voter_id": registration.voter_id,
+        },
+    )
+    db.commit()
+    db.refresh(registration)
+    return registration
+
+
+@router.get("/mp-registration/status", response_model=MPRegistrationStatusCheck)
+def check_mp_registration_status(
+    ref_id: str | None = None,
+    email: str | None = None,
+    db: Session = Depends(get_db),
+) -> MPRegistrationStatusCheck:
+    if not ref_id and not email:
+        raise HTTPException(status_code=400, detail="Provide either application ref_id or registered email")
+
+    stmt = select(MPRegistrationRequest)
+    if ref_id:
+        stmt = stmt.where(MPRegistrationRequest.id == ref_id.strip())
+    elif email:
+        stmt = stmt.where(MPRegistrationRequest.email == email.strip().lower())
+
+    record = db.scalar(stmt)
+    if not record:
+        raise HTTPException(status_code=404, detail="No MP registration application found with the provided details")
+
+    return MPRegistrationStatusCheck(
+        id=record.id,
+        email=record.email,
+        full_name=record.full_name,
+        constituency=record.constituency,
+        status=record.status,
+        created_at=record.created_at,
+        reviewed_at=record.reviewed_at,
+        reviewer_remarks=record.reviewer_remarks,
+        rejection_reason=record.rejection_reason,
     )

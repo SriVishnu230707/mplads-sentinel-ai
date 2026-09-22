@@ -9,6 +9,7 @@ import {
   KeyRound, BadgeCheck, Globe2, BriefcaseBusiness, Printer, FileText, CheckCircle2, ArrowRight,
   Play, Pause, TrendingUp, SlidersHorizontal, ArrowUpDown, Maximize2,
   CreditCard, Lock, Unlock, Copy, Edit3,
+  UserCheck, Award, Home, Plus, Trash2, ShieldAlert,
 } from 'lucide-react'
 import {
   activity, states, stateProgressData, trend, timelineMonths,
@@ -17,6 +18,7 @@ import {
 } from './data'
 import {
   api,
+  DEFAULT_MP_REGISTRATIONS,
   type ApiAlert,
   type ApiDashboardSummary,
   type ApiDelayPrediction,
@@ -24,6 +26,10 @@ import {
   type ApiProjectIntelligence,
   type ApiUser,
   type OfficialCredentials,
+  type MPRegistrationData,
+  type MPRegistrationRecord,
+  type ImmovableProperty,
+  type MovableAssets,
 } from './api'
 import { GisMap, type MapMode } from './GisMap'
 
@@ -79,10 +85,10 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 }
 
 
-type Page = 'overview' | 'alerts' | 'projects' | 'map' | 'cases' | 'reports' | 'admin' | 'profile'
+type Page = 'overview' | 'alerts' | 'projects' | 'map' | 'cases' | 'reports' | 'admin' | 'profile' | 'mp_approvals'
 type Role = 'Ministry National Supervisor' | 'State Nodal Authority' | 'District Authority' | 'Auditor / Investigator' | 'Member of Parliament'
 
-const nav: { id: Page; label: string; icon: typeof LayoutDashboard; count?: number }[] = [
+const baseNav: { id: Page; label: string; icon: typeof LayoutDashboard; count?: number }[] = [
   { id: 'overview', label: 'Command centre', icon: LayoutDashboard },
   { id: 'alerts', label: 'Risk alerts', icon: AlertTriangle },
   { id: 'projects', label: 'Works & projects', icon: FolderKanban },
@@ -136,6 +142,7 @@ const greeting = (name: string): string => {
 const pageDescriptions: Record<Page, string> = {
   overview: '', alerts: 'Prioritized, explainable signals that need human attention.', projects: 'Monitor financial and physical execution in one place.', map: 'Discover geographic clusters, overlaps and possible duplicate works.', cases: 'Track every investigation from triage to independently approved closure.', reports: 'Generate decision-ready summaries without manual spreadsheet work.', admin: 'Manage access, rule versions and platform accountability.',
   profile: 'Review your official identity, jurisdiction and session security.',
+  mp_approvals: 'Verify statutory dossiers, document credentials and approve Member of Parliament onboarding requests.',
 }
 
 const pageNames: Record<Page, string> = {
@@ -147,6 +154,7 @@ const pageNames: Record<Page, string> = {
   reports: 'Reports',
   admin: 'Administration',
   profile: 'Profile',
+  mp_approvals: 'MP Approvals',
 }
 
 type NavigationState = {
@@ -156,7 +164,7 @@ type NavigationState = {
 
 const getInitialPage = (): Page => {
   const hash = window.location.hash.replace('#', '') as Page
-  const validPages: Page[] = ['overview', 'alerts', 'projects', 'map', 'cases', 'reports', 'admin', 'profile']
+  const validPages: Page[] = ['overview', 'alerts', 'projects', 'map', 'cases', 'reports', 'admin', 'profile', 'mp_approvals']
   return validPages.includes(hash) ? hash : 'overview'
 }
 
@@ -200,6 +208,26 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Project | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const [pendingMPCount, setPendingMPCount] = useState(0)
+
+  useEffect(() => {
+    if (user.role === 'ministry') {
+      api.getMinistryMPRegistrations('pending').then(list => setPendingMPCount(list.length)).catch(() => {})
+    }
+  }, [user.role, page])
+
+  const nav = useMemo(() => {
+    const items = [...baseNav]
+    if (user.role === 'ministry') {
+      items.splice(2, 0, {
+        id: 'mp_approvals',
+        label: 'MP Approvals',
+        icon: UserCheck,
+        count: pendingMPCount > 0 ? pendingMPCount : undefined,
+      })
+    }
+    return items
+  }, [user.role, pendingMPCount])
 
   const navigateToPage = (nextPage: Page) => {
     if (nextPage === page && !selected) return
@@ -521,8 +549,9 @@ function DashboardApp({ user, onLogout }: { user: ApiUser; onLogout: () => void 
           {page === 'map' && <MapView projects={filtered} onSelect={handleSelectProject} isDark={dark} />}
           {page === 'cases' && <CasesView projects={filtered} onSelectProject={handleSelectProject} />}
           {page === 'reports' && <ReportsView projects={projectData} summary={summary} user={user} role={role} />}
-          {page === 'admin' && <AdminView />}
+          {page === 'admin' && <AdminView onNavigateApprovals={() => setPage('mp_approvals')} isMinistry={user.role === 'ministry'} />}
           {page === 'profile' && <ProfileView user={user} role={role} onLogout={onLogout} />}
+          {page === 'mp_approvals' && <MPApprovalsView onNavigateAlerts={() => setPage('alerts')} />}
         </div>
       </main>
 
@@ -2940,8 +2969,605 @@ function ReportsView({
   )
 }
 
-function AdminView() {
+function MPDossierDrawer({
+  request,
+  onClose,
+  onApprove,
+  onReject,
+  approving,
+  rejecting,
+}: {
+  request: MPRegistrationRecord
+  onClose: () => void
+  onApprove: (remarks: string) => void
+  onReject: (reason: string, remarks: string) => void
+  approving: boolean
+  rejecting: boolean
+}) {
+  const [activeTab, setActiveTab] = useState<'profile' | 'docs' | 'assets' | 'banking'>('profile')
+  const [showRejectBox, setShowRejectBox] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejectRemarks, setRejectRemarks] = useState('')
+  const [approvalRemarks, setApprovalRemarks] = useState('All statutory ECI certificates, property disclosures and voter ID verified.')
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false)
+
+  const initials = request.full_name.split(' ').map(n => n[0]).slice(0, 2).join('')
+
+  return (
+    <>
+      <div className="drawer-scrim" onClick={onClose} />
+      <aside className="mp-dossier-drawer" aria-label="MP Registration Statutory Dossier">
+        <header className="mp-dossier-hero">
+          <div className="mp-dossier-hero-left">
+            <div className="mp-dossier-avatar">{initials}</div>
+            <div className="mp-dossier-titles">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className={`mp-status-pill ${request.status}`}>{request.status}</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{request.id}</span>
+              </div>
+              <h2>{request.full_name}</h2>
+              <p>{request.constituency} ({request.house}) · {request.state} · {request.political_party}</p>
+            </div>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close dossier">
+            <X size={20} />
+          </button>
+        </header>
+
+        <nav className="mp-dossier-tabs" aria-label="Dossier sections">
+          <button
+            type="button"
+            className={`mp-dossier-tab-btn ${activeTab === 'profile' ? 'active' : ''}`}
+            onClick={() => setActiveTab('profile')}
+          >
+            Personal & Election
+          </button>
+          <button
+            type="button"
+            className={`mp-dossier-tab-btn ${activeTab === 'docs' ? 'active' : ''}`}
+            onClick={() => setActiveTab('docs')}
+          >
+            Statutory Documents
+          </button>
+          <button
+            type="button"
+            className={`mp-dossier-tab-btn ${activeTab === 'assets' ? 'active' : ''}`}
+            onClick={() => setActiveTab('assets')}
+          >
+            Properties & Assets ({request.immovable_properties.length})
+          </button>
+          <button
+            type="button"
+            className={`mp-dossier-tab-btn ${activeTab === 'banking' ? 'active' : ''}`}
+            onClick={() => setActiveTab('banking')}
+          >
+            Banking & PFMS
+          </button>
+        </nav>
+
+        <div className="mp-dossier-content">
+          {activeTab === 'profile' && (
+            <>
+              <div className="mp-dossier-section">
+                <h4><UserRound size={14} /> Parliamentary Identity</h4>
+                <div className="mp-info-grid-2">
+                  <div className="mp-info-item"><span>House & Term</span><strong>{request.house} ({request.term_label})</strong></div>
+                  <div className="mp-info-item"><span>Constituency</span><strong>{request.constituency}</strong></div>
+                  <div className="mp-info-item"><span>State</span><strong>{request.state}</strong></div>
+                  <div className="mp-info-item"><span>Political Party</span><strong>{request.political_party}</strong></div>
+                </div>
+              </div>
+
+              <div className="mp-dossier-section">
+                <h4><Mail size={14} /> Contact & Personal Background</h4>
+                <div className="mp-info-grid-2">
+                  <div className="mp-info-item"><span>Official Email</span><strong>{request.email}</strong></div>
+                  <div className="mp-info-item"><span>Mobile Number</span><strong>+91 {request.phone_number}</strong></div>
+                  <div className="mp-info-item"><span>Date of Birth</span><strong>{new Date(request.dob).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></div>
+                  <div className="mp-info-item"><span>Gender / Blood Group</span><strong>{request.gender} {request.blood_group ? `(${request.blood_group})` : ''}</strong></div>
+                  <div className="mp-info-item" style={{ gridColumn: '1 / -1' }}>
+                    <span>Father / Spouse Name</span><strong>{request.father_or_spouse_name}</strong>
+                  </div>
+                  <div className="mp-info-item" style={{ gridColumn: '1 / -1' }}>
+                    <span>Permanent Constituency Address</span><strong>{request.permanent_address}</strong>
+                  </div>
+                  {request.present_address && (
+                    <div className="mp-info-item" style={{ gridColumn: '1 / -1' }}>
+                      <span>Present Delhi Address</span><strong>{request.present_address}</strong>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === 'docs' && (
+            <>
+              <div className="mp-doc-alert">
+                <ShieldCheck size={20} color="#b07d17" />
+                <div>
+                  <strong>Official Verification Trail:</strong>
+                  <span> All identification credentials below must be cross-checked against Election Commission of India Gazette and State Civil registries.</span>
+                </div>
+              </div>
+
+              <div className="mp-dossier-section">
+                <h4><Award size={14} /> Election Victory & Commission Record</h4>
+                <div className="mp-info-grid-2">
+                  <div className="mp-info-item highlight">
+                    <span>ECI Winning Certificate No.</span>
+                    <strong>{request.winning_certificate_no}</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Result Declaration Date</span>
+                    <strong>{new Date(request.winning_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</strong>
+                  </div>
+                  <div className="mp-info-item" style={{ gridColumn: '1 / -1' }}>
+                    <span>Returning Officer Seal / Code</span>
+                    <strong>{request.returning_officer_code || 'Verified by District Election Officer'}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mp-dossier-section">
+                <h4><BadgeCheck size={14} /> Statutory Citizen Identity Credentials</h4>
+                <div className="mp-info-grid-2">
+                  <div className="mp-info-item highlight">
+                    <span>Voter ID (EPIC Number)</span>
+                    <strong>{request.voter_id}</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Electoral Roll Part / Serial</span>
+                    <strong>{request.voter_constituency_serial || 'Standard Electoral Registry'}</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Driving License Number</span>
+                    <strong>{request.driving_license_no}</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Issuing RTO</span>
+                    <strong>{request.driving_license_rto || 'State Transport Dept'}</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Community / Caste Certificate</span>
+                    <strong>{request.community_certificate_no} ({request.community_category})</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Issuing Revenue Authority</span>
+                    <strong>{request.community_issuing_authority || 'Tahsildar / SDM'}</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Birth Certificate Number</span>
+                    <strong>{request.birth_certificate_no}</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Registered Place of Birth</span>
+                    <strong>{request.birth_place || 'Municipal Corporation'}</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Income Tax PAN</span>
+                    <strong>{request.pan_number}</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Aadhaar Number (UIDAI)</span>
+                    <strong>•••• •••• {request.aadhaar_number.slice(-4)}</strong>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === 'assets' && (
+            <>
+              <div className="mp-dossier-section">
+                <h4><Landmark size={14} /> Wealth & Asset Disclosures</h4>
+                <div className="mp-info-grid-2">
+                  <div className="mp-info-item highlight">
+                    <span>Total Declared Wealth</span>
+                    <strong style={{ color: '#1a6f5c', fontSize: 16 }}>₹{request.total_assets_lakh.toLocaleString('en-IN')} Lakhs</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Declared Liabilities / Loans</span>
+                    <strong>₹{request.liabilities_lakh.toLocaleString('en-IN')} Lakhs</strong>
+                  </div>
+                  {request.affidavit_eci_ref && (
+                    <div className="mp-info-item" style={{ gridColumn: '1 / -1' }}>
+                      <span>ECI Form 26 Affidavit Reference</span>
+                      <a href={request.affidavit_eci_ref} target="_blank" rel="noopener noreferrer" style={{ color: '#1a6f5c', fontWeight: 600 }}>
+                        {request.affidavit_eci_ref}
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mp-dossier-section">
+                <h4><Home size={14} /> Immovable Properties ({request.immovable_properties.length})</h4>
+                {request.immovable_properties.length === 0 ? (
+                  <p style={{ fontSize: 12, color: 'var(--muted)' }}>No immovable property declared.</p>
+                ) : (
+                  <div className="mp-props-card" style={{ padding: 0, overflow: 'hidden' }}>
+                    <table className="mp-props-table">
+                      <thead>
+                        <tr>
+                          <th>Type</th>
+                          <th>Location / Survey</th>
+                          <th>Area</th>
+                          <th>Value (₹ Lakhs)</th>
+                          <th>Owner</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {request.immovable_properties.map((prop, idx) => (
+                          <tr key={idx}>
+                            <td><strong>{prop.property_type}</strong></td>
+                            <td>{prop.location}</td>
+                            <td>{prop.area_sqft || '—'}</td>
+                            <td><strong style={{ color: '#1a6f5c' }}>₹{prop.estimated_value_lakh} L</strong></td>
+                            <td><span className="mp-status-pill approved" style={{ fontSize: 9 }}>{prop.ownership_status}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="mp-dossier-section">
+                <h4><IndianRupee size={14} /> Movable Assets Summary</h4>
+                <div className="mp-info-grid-2">
+                  <div className="mp-info-item">
+                    <span>Bank Deposits / Savings</span>
+                    <strong>₹{request.movable_assets?.bank_deposits_lakh ?? 0} Lakhs</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Gold & Jewellery</span>
+                    <strong>{request.movable_assets?.gold_jewellery_grams ?? 0} grams</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Investments / Shares</span>
+                    <strong>₹{request.movable_assets?.investments_shares_lakh ?? 0} Lakhs</strong>
+                  </div>
+                  <div className="mp-info-item">
+                    <span>Registered Vehicles</span>
+                    <strong>{request.movable_assets?.vehicles_summary || 'None declared'}</strong>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === 'banking' && (
+            <div className="mp-dossier-section">
+              <h4><Building2 size={14} /> Public Finance & MPLADS Account</h4>
+              <div className="mp-info-grid-2">
+                <div className="mp-info-item highlight" style={{ gridColumn: '1 / -1' }}>
+                  <span>Designated Bank Name & Branch</span>
+                  <strong>{request.bank_name}</strong>
+                </div>
+                <div className="mp-info-item">
+                  <span>MP Account Number</span>
+                  <strong>{request.bank_account_number}</strong>
+                </div>
+                <div className="mp-info-item">
+                  <span>RTGS / NEFT IFSC Code</span>
+                  <strong>{request.bank_ifsc}</strong>
+                </div>
+                <div className="mp-info-item" style={{ gridColumn: '1 / -1' }}>
+                  <span>PFMS Agency Code</span>
+                  <strong>{request.pfms_code || 'PFMS-MP-AUTO-PENDING'}</strong>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {request.reviewed_at && (
+            <div className="mp-dossier-section" style={{ marginTop: 10 }}>
+              <h4><ClipboardCheck size={14} /> Ministry Scrutiny History</h4>
+              <div className="mp-info-item highlight">
+                <span>Decision & Review Date</span>
+                <strong>
+                  {request.status.toUpperCase()} on {new Date(request.reviewed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </strong>
+                {request.reviewer_remarks && <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text)' }}>Remarks: {request.reviewer_remarks}</p>}
+                {request.rejection_reason && <p style={{ margin: '4px 0 0', fontSize: 11, color: '#ae3d36' }}>Reason for Rejection: {request.rejection_reason}</p>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {request.status === 'pending' && (
+          <footer className="mp-dossier-footer">
+            {showRejectBox ? (
+              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ font: '700 11px "Manrope"', color: '#ae3d36' }}>
+                  Rejection Reason (ECI / Civil Registry Mismatch):
+                </label>
+                <textarea
+                  className="mp-field-input"
+                  style={{ height: 60 }}
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  placeholder="Specify why this application cannot be verified..."
+                />
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button type="button" className="mp-modal-btn secondary" onClick={() => setShowRejectBox(false)}>Cancel</button>
+                  <button
+                    type="button"
+                    className="mp-modal-btn"
+                    style={{ background: '#ae3d36', color: 'white' }}
+                    disabled={rejecting || !rejectReason.trim()}
+                    onClick={() => onReject(rejectReason, rejectRemarks)}
+                  >
+                    {rejecting ? 'Rejecting…' : 'Confirm Rejection'}
+                  </button>
+                </div>
+              </div>
+            ) : showApproveConfirm ? (
+              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ font: '700 11px "Manrope"', color: '#166552' }}>
+                  Ministry Approval Verification Remarks:
+                </label>
+                <input
+                  type="text"
+                  className="mp-field-input"
+                  value={approvalRemarks}
+                  onChange={e => setApprovalRemarks(e.target.value)}
+                />
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button type="button" className="mp-modal-btn secondary" onClick={() => setShowApproveConfirm(false)}>Cancel</button>
+                  <button
+                    type="button"
+                    className="mp-modal-btn primary"
+                    disabled={approving}
+                    onClick={() => onApprove(approvalRemarks)}
+                  >
+                    {approving ? 'Provisioning Account…' : 'Confirm Official Approval & Provision'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="mp-modal-btn"
+                  style={{ color: '#ae3d36', border: '1px solid rgba(174, 61, 54, 0.3)' }}
+                  onClick={() => setShowRejectBox(true)}
+                >
+                  <X size={16} /> Reject Application
+                </button>
+                <button
+                  type="button"
+                  className="mp-modal-btn primary"
+                  onClick={() => setShowApproveConfirm(true)}
+                >
+                  <CheckCircle2 size={16} /> Approve & Provision MP Account
+                </button>
+              </>
+            )}
+          </footer>
+        )}
+      </aside>
+    </>
+  )
+}
+
+function MPApprovalsView({ onNavigateAlerts }: { onNavigateAlerts?: () => void }) {
+  const [requests, setRequests] = useState<MPRegistrationRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
+  const [search, setSearch] = useState('')
+  const [selectedReq, setSelectedReq] = useState<MPRegistrationRecord | null>(null)
+  const [approving, setApproving] = useState(false)
+  const [rejecting, setRejecting] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const data = await api.getMinistryMPRegistrations()
+      setRequests(data)
+    } catch {
+      setRequests(DEFAULT_MP_REGISTRATIONS)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const handleApprove = async (remarks: string) => {
+    if (!selectedReq) return
+    setApproving(true)
+    try {
+      const updated = await api.approveMPRegistration(selectedReq.id, remarks)
+      setSelectedReq(updated)
+      setToastMessage(`Official account for ${updated.full_name} has been provisioned and authorized!`)
+      await loadData()
+    } catch (err: any) {
+      alert(err?.message || 'Approval failed')
+    } finally {
+      setApproving(false)
+    }
+  }
+
+  const handleReject = async (reason: string, remarks: string) => {
+    if (!selectedReq) return
+    setRejecting(true)
+    try {
+      const updated = await api.rejectMPRegistration(selectedReq.id, reason, remarks)
+      setSelectedReq(updated)
+      setToastMessage(`Application ${updated.id} was rejected.`)
+      await loadData()
+    } catch (err: any) {
+      alert(err?.message || 'Rejection failed')
+    } finally {
+      setRejecting(false)
+    }
+  }
+
+  const filtered = useMemo(() => {
+    let list = requests
+    if (filter !== 'all') {
+      list = list.filter(r => r.status === filter)
+    }
+    const q = search.trim().toLowerCase()
+    if (q) {
+      list = list.filter(r =>
+        r.full_name.toLowerCase().includes(q) ||
+        r.constituency.toLowerCase().includes(q) ||
+        r.state.toLowerCase().includes(q) ||
+        r.voter_id.toLowerCase().includes(q) ||
+        r.id.toLowerCase().includes(q)
+      )
+    }
+    return list
+  }, [requests, filter, search])
+
+  const pendingCount = requests.filter(r => r.status === 'pending').length
+  const approvedCount = requests.filter(r => r.status === 'approved').length
+  const rejectedCount = requests.filter(r => r.status === 'rejected').length
+
+  return (
+    <div className="mp-approvals-page">
+      <div className="page-header">
+        <div>
+          <span className="eyebrow"><i className="status-dot" /> STATUTORY GOVERNANCE & ONBOARDING</span>
+          <h1>MP Onboarding & Verification Queue</h1>
+          <p>Scrutinize Member of Parliament credentials, ECI winning certificates, and declared assets prior to provisioning MPLADS access.</p>
+        </div>
+      </div>
+
+      {toastMessage && (
+        <div className="mp-doc-alert" style={{ background: 'rgba(39, 128, 108, 0.15)', borderColor: 'rgba(39, 128, 108, 0.3)', color: '#166552' }}>
+          <CheckCircle2 size={18} />
+          <strong>{toastMessage}</strong>
+          <button type="button" onClick={() => setToastMessage(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} /></button>
+        </div>
+      )}
+
+      <div className="mp-kpi-grid">
+        <div className="mp-kpi-card">
+          <div className="mp-kpi-icon total"><Landmark size={20} /></div>
+          <div className="mp-kpi-info"><span>Total Dossiers</span><strong>{requests.length}</strong></div>
+        </div>
+        <div className="mp-kpi-card">
+          <div className="mp-kpi-icon pending"><Clock3 size={20} /></div>
+          <div className="mp-kpi-info"><span>Pending Verification</span><strong style={{ color: '#b07d17' }}>{pendingCount}</strong></div>
+        </div>
+        <div className="mp-kpi-card">
+          <div className="mp-kpi-icon approved"><BadgeCheck size={20} /></div>
+          <div className="mp-kpi-info"><span>Approved MPs</span><strong style={{ color: '#166552' }}>{approvedCount}</strong></div>
+        </div>
+        <div className="mp-kpi-card">
+          <div className="mp-kpi-icon rejected"><ShieldAlert size={20} /></div>
+          <div className="mp-kpi-info"><span>Rejected Applications</span><strong style={{ color: '#ae3d36' }}>{rejectedCount}</strong></div>
+        </div>
+      </div>
+
+      <div className="mp-table-card">
+        <div className="mp-table-toolbar">
+          <div className="mp-filter-tabs">
+            <button type="button" className={`mp-filter-tab ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>All ({requests.length})</button>
+            <button type="button" className={`mp-filter-tab ${filter === 'pending' ? 'active' : ''}`} onClick={() => setFilter('pending')}>Pending ({pendingCount})</button>
+            <button type="button" className={`mp-filter-tab ${filter === 'approved' ? 'active' : ''}`} onClick={() => setFilter('approved')}>Approved ({approvedCount})</button>
+            <button type="button" className={`mp-filter-tab ${filter === 'rejected' ? 'active' : ''}`} onClick={() => setFilter('rejected')}>Rejected ({rejectedCount})</button>
+          </div>
+          <div className="mp-table-search">
+            <Search size={16} />
+            <input
+              type="text"
+              placeholder="Search MP, constituency, voter ID…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {loading ? (
+          <p style={{ padding: 24, textAlign: 'center', color: 'var(--muted)' }}>Loading MP dossiers from Ministry vault…</p>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center' }}>
+            <p style={{ color: 'var(--muted)', fontSize: 13 }}>No registration requests found matching the current filter.</p>
+          </div>
+        ) : (
+          <table className="mp-props-table">
+            <thead>
+              <tr>
+                <th>Reference ID</th>
+                <th>Candidate / MP</th>
+                <th>Constituency & State</th>
+                <th>Party</th>
+                <th>Voter ID</th>
+                <th>Winning Cert</th>
+                <th>Declared Assets</th>
+                <th>Status</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(req => (
+                <tr key={req.id}>
+                  <td><code style={{ fontSize: 11 }}>{req.id}</code></td>
+                  <td>
+                    <strong>{req.full_name}</strong>
+                    <br />
+                    <small style={{ color: 'var(--muted)' }}>{req.email}</small>
+                  </td>
+                  <td>
+                    <strong>{req.constituency}</strong>
+                    <br />
+                    <small style={{ color: 'var(--muted)' }}>{req.state} ({req.house})</small>
+                  </td>
+                  <td>{req.political_party}</td>
+                  <td><code style={{ fontSize: 10 }}>{req.voter_id}</code></td>
+                  <td><code style={{ fontSize: 10 }}>{req.winning_certificate_no}</code></td>
+                  <td><strong style={{ color: '#1a6f5c' }}>₹{req.total_assets_lakh} L</strong></td>
+                  <td>
+                    <span className={`mp-status-pill ${req.status}`}>{req.status}</span>
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      style={{ padding: '4px 10px', fontSize: 11 }}
+                      onClick={() => setSelectedReq(req)}
+                    >
+                      Inspect Dossier
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {selectedReq && (
+        <MPDossierDrawer
+          request={selectedReq}
+          onClose={() => setSelectedReq(null)}
+          onApprove={handleApprove}
+          onReject={handleReject}
+          approving={approving}
+          rejecting={rejecting}
+        />
+      )}
+    </div>
+  )
+}
+
+function AdminView({ onNavigateApprovals, isMinistry }: { onNavigateApprovals?: () => void; isMinistry?: boolean }) {
   const settings = [
+    ...(isMinistry ? [{
+      icon: UserCheck,
+      title: 'MP Onboarding Approvals',
+      text: 'Review statutory credentials, voter IDs, winning certs and property disclosures.',
+      value: 'Ministry Queue',
+      action: onNavigateApprovals,
+    }] : []),
     { icon: Users, title: 'Users & access', text: 'Manage roles, jurisdiction scopes and temporary delegation.', value: '1,284 users' },
     { icon: ShieldCheck, title: 'Security policies', text: 'Review authentication, export and session controls.', value: '12 policies' },
     { icon: Zap, title: 'Detection rules', text: 'Version and simulate compliance rules before activation.', value: '34 active' },
@@ -2949,7 +3575,7 @@ function AdminView() {
     { icon: Activity, title: 'Audit explorer', text: 'Search immutable access and decision events.', value: '2.8M events' },
     { icon: Building2, title: 'Organizations', text: 'Maintain state, district and implementing-agency hierarchy.', value: '4,912 units' },
   ]
-  return <section className="admin-grid">{settings.map(({icon: Icon, title, text, value}) => <button className="card admin-card" key={title}><span className="admin-icon"><Icon size={21}/></span><div><h2>{title}</h2><p>{text}</p><strong>{value}</strong></div><ChevronRight size={18}/></button>)}</section>
+  return <section className="admin-grid">{settings.map(({icon: Icon, title, text, value, action}) => <button className="card admin-card" key={title} onClick={action}><span className="admin-icon"><Icon size={21}/></span><div><h2>{title}</h2><p>{text}</p><strong>{value}</strong></div><ChevronRight size={18}/></button>)}</section>
 }
 
 function ProfileView({ user, role, onLogout }: { user: ApiUser; role: Role; onLogout: () => void }) {
@@ -3559,12 +4185,1170 @@ function ProjectDrawer({ project, onClose }: { project: Project; onClose: () => 
   return <><div className="drawer-scrim" onClick={onClose}/><aside className="drawer"><header><div><span className="drawer-label">MPLADS EARLY-WARNING RISK DOSSIER</span><h2>{project.title}</h2><p>{project.id} · {project.location}{project.constituency ? ` · ${project.constituency} (Lok Sabha)` : ''}</p></div><button className="icon-button" onClick={onClose} aria-label="Close project details"><X size={20}/></button></header><div className="drawer-body"><div className="risk-hero"><div className={`risk-ring ring-${project.level.toLowerCase()}`}><strong>{project.risk}</strong><span>/100</span></div><div><span className={riskClass(project.level)}><i/>{project.level} risk</span><h3>Human review recommended</h3><p>Signals are indicators, not a determination of fraud.</p></div></div><div className="quick-facts"><div><span>Sanctioned</span><strong>{formatCrore(project.sanctioned / 100)}</strong></div><div><span>Spent</span><strong>{formatCrore(project.spent / 100)}</strong></div><div><span>Progress</span><strong>{project.progress}%</strong></div></div>{loading && <p className="intelligence-loading">Loading authorized intelligence…</p>}{prediction && <section className="drawer-section prediction-card"><div className="section-title-row"><h3>Delay early warning</h3><span className="prediction-score">{prediction.delay_probability}% · {prediction.confidence}</span></div><p>{prediction.disclaimer}</p><ul>{prediction.factors.map(factor => <li key={factor}>{factor}</li>)}</ul></section>}{intelligence && <><section className="drawer-section"><div className="section-title-row"><h3>Project health</h3><span className={`health-badge ${intelligence.health_band.toLowerCase().replaceAll(' ', '-')}`}>{intelligence.health_score}/100 · {intelligence.health_band}</span></div><div className="health-track"><span style={{width: `${intelligence.health_score}%`}}/></div></section><section className="drawer-section"><h3>Compliance watch</h3>{intelligence.compliance.map(item => <article className="compliance-item" key={item.label}><span className={`compliance-dot ${item.status}`}/><div><strong>{item.label}</strong><p>{item.detail}</p></div><small>{item.status}</small></article>)}</section><section className="drawer-section"><h3>Potential duplicate works</h3>{intelligence.duplicate_candidates.length ? intelligence.duplicate_candidates.map(candidate => <article className="duplicate-item" key={candidate.project_id}><div><strong>{candidate.title}</strong><p>{candidate.project_id} · {candidate.location}</p><small>{candidate.reasons.join(' · ')}</small></div><b>{candidate.similarity_score}%</b></article>) : <p className="empty-intelligence">No similar works crossed the review threshold.</p>}</section><section className="drawer-section"><h3>Risk history</h3>{intelligence.risk_timeline.map((point, index) => <div className="timeline-item" key={`${point.recorded_at}-${point.score}`}><span className={index === intelligence.risk_timeline.length - 1 ? 'current' : ''}>{index === intelligence.risk_timeline.length - 1 && <Check size={12}/>}</span><p><strong>{point.score}/100 · {point.level}</strong><br/>{new Date(point.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p></div>)}</section><section className="drawer-section"><h3>Submit site evidence</h3><p className="evidence-note">Metadata only for this prototype. The server verifies time, progress, and a 2 km project radius.</p><form className="evidence-form" onSubmit={submitEvidence}><div><label>Latitude<input type="number" min="6" max="38" step="0.0001" value={evidenceLatitude} onChange={event => setEvidenceLatitude(event.target.value)} required/></label><label>Longitude<input type="number" min="68" max="98" step="0.0001" value={evidenceLongitude} onChange={event => setEvidenceLongitude(event.target.value)} required/></label></div><label>Observed progress (%)<input type="number" min={project.progress} max="100" value={evidenceProgress} onChange={event => setEvidenceProgress(event.target.value)} required/></label><label>Inspection remarks<textarea value={evidenceRemarks} onChange={event => setEvidenceRemarks(event.target.value)} minLength={3} maxLength={1000} required/></label><button className="button secondary" disabled={savingEvidence}>{savingEvidence ? 'Verifying evidence…' : 'Submit verified metadata'}</button></form></section></>}</div><footer>{actionMessage && <span className="drawer-message">{actionMessage}</span>}<button className="button secondary" onClick={onClose}>Close</button>{alert?.status === 'open' && <button className="button primary" onClick={startReview}><ClipboardCheck size={17}/> Start review</button>}</footer></aside></>
 }
 
+function MPRegistrationModal({
+  onClose,
+  onApplicationSubmitted,
+}: {
+  onClose: () => void
+  onApplicationSubmitted?: (refId: string) => void
+}) {
+  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [successRecord, setSuccessRecord] = useState<MPRegistrationRecord | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  const [form, setForm] = useState<MPRegistrationData>({
+    email: '',
+    password: '',
+    full_name: '',
+    phone_number: '',
+    dob: '1975-05-15',
+    gender: 'Male',
+    blood_group: 'O+',
+    father_or_spouse_name: '',
+    permanent_address: '',
+    present_address: '',
+    house: 'Lok Sabha',
+    state: 'Maharashtra',
+    constituency: '',
+    political_party: '',
+    term_label: '18th Lok Sabha (2024-2029)',
+    voter_id: '',
+    voter_constituency_serial: '',
+    driving_license_no: '',
+    driving_license_rto: '',
+    winning_certificate_no: '',
+    winning_date: '2024-06-04',
+    returning_officer_code: '',
+    community_certificate_no: '',
+    community_category: 'General',
+    community_issuing_authority: '',
+    birth_certificate_no: '',
+    birth_place: '',
+    pan_number: '',
+    aadhaar_number: '',
+    immovable_properties: [
+      {
+        property_type: 'Agricultural Land',
+        location: 'Constituency Rural Taluk',
+        area_sqft: '4.5 Acres',
+        estimated_value_lakh: 180,
+        ownership_status: 'Self',
+      },
+      {
+        property_type: 'Residential House',
+        location: 'District Headquarter City',
+        area_sqft: '3400 sq.ft',
+        estimated_value_lakh: 360,
+        ownership_status: 'Joint',
+      },
+    ],
+    movable_assets: {
+      bank_deposits_lakh: 160,
+      vehicles_summary: 'Toyota Fortuner (VIP Series)',
+      gold_jewellery_grams: 150,
+      investments_shares_lakh: 310,
+    },
+    total_assets_lakh: 1010,
+    liabilities_lakh: 25,
+    affidavit_eci_ref: 'https://affidavit.eci.gov.in/candidate-affidavit/2024/LS',
+    bank_name: 'State Bank of India, Parliament House Branch',
+    bank_account_number: '',
+    bank_ifsc: 'SBIN0000691',
+    pfms_code: '',
+  })
+
+  const fillSampleDossier = (sampleNum: 1 | 2) => {
+    if (sampleNum === 1) {
+      setForm({
+        email: 'supriya.sule@parliament.gov.in',
+        password: 'Sentinel@2026',
+        full_name: 'Supriya Sule',
+        phone_number: '9820011223',
+        dob: '1969-06-30',
+        gender: 'Female',
+        blood_group: 'B+',
+        father_or_spouse_name: 'Sharad Pawar',
+        permanent_address: 'Govind Baug, Malegaon BK, Baramati, Pune, Maharashtra - 413115',
+        present_address: '8, Janpath, New Delhi - 110001',
+        house: 'Lok Sabha',
+        state: 'Maharashtra',
+        constituency: 'Baramati',
+        political_party: 'NCP (Sharadchandra Pawar)',
+        term_label: '18th Lok Sabha (2024-2029)',
+        voter_id: 'MH04192841',
+        voter_constituency_serial: 'Part 210, Sl 405',
+        driving_license_no: 'MH12 19950004123',
+        driving_license_rto: 'RTO Pune (MH-12)',
+        winning_certificate_no: 'ECI-MH-2024-FORM21E-035',
+        winning_date: '2024-06-04',
+        returning_officer_code: 'RO-MH-35-BARAMATI',
+        community_certificate_no: 'REV-MH-PUN-2015-89102',
+        community_category: 'General',
+        community_issuing_authority: 'Sub-Divisional Officer, Baramati',
+        birth_certificate_no: 'MC-PUN-1969-1092',
+        birth_place: 'Pune, Maharashtra',
+        pan_number: 'AASPS1969M',
+        aadhaar_number: '612345678901',
+        immovable_properties: [
+          {
+            property_type: 'Agricultural Land',
+            location: 'Malegaon BK, Baramati, Pune',
+            area_sqft: '5.2 Acres',
+            estimated_value_lakh: 240,
+            ownership_status: 'Self',
+          },
+          {
+            property_type: 'Residential Bungalow',
+            location: 'Bavdhan, Pune, Maharashtra',
+            area_sqft: '4500 sq.ft',
+            estimated_value_lakh: 450,
+            ownership_status: 'Joint',
+          },
+        ],
+        movable_assets: {
+          bank_deposits_lakh: 210,
+          vehicles_summary: 'Mahindra Scorpio-N (MH-12-SS-2024)',
+          gold_jewellery_grams: 180,
+          investments_shares_lakh: 520,
+        },
+        total_assets_lakh: 1420,
+        liabilities_lakh: 35,
+        affidavit_eci_ref: 'https://affidavit.eci.gov.in/candidate-affidavit/2024/MH/35',
+        bank_name: 'State Bank of India, Parliament House',
+        bank_account_number: '20918239012',
+        bank_ifsc: 'SBIN0000691',
+        pfms_code: 'PFMS-MP-00912',
+      })
+    } else {
+      setForm({
+        email: 'akhilesh.yadav@parliament.gov.in',
+        password: 'Sentinel@2026',
+        full_name: 'Akhilesh Yadav',
+        phone_number: '9811009988',
+        dob: '1973-07-01',
+        gender: 'Male',
+        blood_group: 'AB+',
+        father_or_spouse_name: 'Late Mulayam Singh Yadav',
+        permanent_address: 'Village Saifai, Etawah, Uttar Pradesh - 206130',
+        present_address: '1, Vikramaditya Marg, Lucknow / Delhi Residence',
+        house: 'Lok Sabha',
+        state: 'Uttar Pradesh',
+        constituency: 'Kannauj',
+        political_party: 'Samajwadi Party',
+        term_label: '18th Lok Sabha (2024-2029)',
+        voter_id: 'UP23849102',
+        voter_constituency_serial: 'Part 112, Sl 302',
+        driving_license_no: 'UP75 19980009182',
+        driving_license_rto: 'RTO Etawah (UP-75)',
+        winning_certificate_no: 'ECI-UP-2024-FORM21E-042',
+        winning_date: '2024-06-04',
+        returning_officer_code: 'RO-UP-42-KANNAUJ',
+        community_certificate_no: 'REV-UP-ETW-2018-77192',
+        community_category: 'OBC',
+        community_issuing_authority: 'Tahsildar, Saifai',
+        birth_certificate_no: 'MC-ETW-1973-0041',
+        birth_place: 'Saifai, Etawah',
+        pan_number: 'AAAPY1973A',
+        aadhaar_number: '918273645019',
+        immovable_properties: [
+          {
+            property_type: 'Agricultural Land',
+            location: 'Saifai, Etawah, Uttar Pradesh',
+            area_sqft: '12.5 Acres',
+            estimated_value_lakh: 420,
+            ownership_status: 'Self',
+          },
+          {
+            property_type: 'Commercial Complex',
+            location: 'Hazratganj, Lucknow',
+            area_sqft: '6000 sq.ft',
+            estimated_value_lakh: 880,
+            ownership_status: 'Joint',
+          },
+        ],
+        movable_assets: {
+          bank_deposits_lakh: 380,
+          vehicles_summary: 'Toyota Land Cruiser (UP-75-AY-0001)',
+          gold_jewellery_grams: 240,
+          investments_shares_lakh: 650,
+        },
+        total_assets_lakh: 2330,
+        liabilities_lakh: 50,
+        affidavit_eci_ref: 'https://affidavit.eci.gov.in/candidate-affidavit/2024/UP/42',
+        bank_name: 'State Bank of India, Parliament House',
+        bank_account_number: '30918293810',
+        bank_ifsc: 'SBIN0000691',
+        pfms_code: 'PFMS-MP-00778',
+      })
+    }
+  }
+
+  const updateProp = (index: number, key: keyof ImmovableProperty, value: any) => {
+    const next = [...form.immovable_properties]
+    next[index] = { ...next[index], [key]: value }
+    setForm(f => ({ ...f, immovable_properties: next }))
+  }
+
+  const addProp = () => {
+    setForm(f => ({
+      ...f,
+      immovable_properties: [
+        ...f.immovable_properties,
+        {
+          property_type: 'Residential Plot',
+          location: '',
+          area_sqft: '2400 sq.ft',
+          estimated_value_lakh: 50,
+          ownership_status: 'Self',
+        },
+      ],
+    }))
+  }
+
+  const removeProp = (index: number) => {
+    setForm(f => ({
+      ...f,
+      immovable_properties: f.immovable_properties.filter((_, i) => i !== index),
+    }))
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    try {
+      const propsTotal = form.immovable_properties.reduce((sum, p) => sum + Number(p.estimated_value_lakh || 0), 0)
+      const movTotal = Number(form.movable_assets.bank_deposits_lakh || 0) + Number(form.movable_assets.investments_shares_lakh || 0)
+      const autoTotal = Math.max(form.total_assets_lakh, propsTotal + movTotal)
+
+      const payload = {
+        ...form,
+        total_assets_lakh: autoTotal,
+      }
+      const record = await api.submitMPRegistration(payload)
+      setSuccessRecord(record)
+      onApplicationSubmitted?.(record.id)
+    } catch (err: any) {
+      setError(err?.message || 'Submission failed. Please verify required fields.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const copyRefId = () => {
+    if (successRecord?.id) {
+      navigator.clipboard.writeText(successRecord.id)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  return (
+    <div className="mp-modal-backdrop">
+      <div className="mp-modal-box">
+        <header className="mp-modal-header">
+          <div className="mp-modal-header-left">
+            <div className="mp-modal-badge-icon">
+              <Landmark size={22} />
+            </div>
+            <div>
+              <h2>MP Official Onboarding Application</h2>
+              <p>Ministry of Statistics & PI · Statutory Identity & Assets Verification Dossier</p>
+            </div>
+          </div>
+          <button className="mp-close-btn" onClick={onClose} aria-label="Close dialog">
+            <X size={18} />
+          </button>
+        </header>
+
+        {successRecord ? (
+          <div className="mp-success-screen">
+            <div className="mp-success-badge">
+              <CheckCircle2 size={36} />
+            </div>
+            <h2 style={{ margin: 0, font: '800 22px "Manrope"' }}>Dossier Submitted Successfully</h2>
+            <p style={{ maxWidth: 500, color: 'var(--muted)', fontSize: 13, margin: 0 }}>
+              Your application has been routed directly to the Ministry National Supervisor account (<code>ministry@sentinel.gov.in</code>) for official scrutiny and statutory credential verification.
+            </p>
+
+            <div className="mp-ref-box">
+              <span>Application Tracking Reference ID</span>
+              <strong>{successRecord.id}</strong>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={copyRefId}
+                style={{ fontSize: 11, padding: '4px 12px', margin: '4px auto 0' }}
+              >
+                {copied ? <Check size={12} /> : <Copy size={12} />}
+                {copied ? 'Copied to clipboard' : 'Copy Reference ID'}
+              </button>
+            </div>
+
+            <div style={{ background: 'var(--canvas)', padding: 16, borderRadius: 12, border: '1px solid var(--line)', width: 'min(500px, 100%)', textAlign: 'left', fontSize: 11.5 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ color: 'var(--muted)' }}>Candidate:</span>
+                <strong>{successRecord.full_name}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ color: 'var(--muted)' }}>Constituency:</span>
+                <strong>{successRecord.constituency} ({successRecord.house})</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ color: 'var(--muted)' }}>Current Status:</span>
+                <span className="mp-status-pill pending">Pending Ministry Approval</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--muted)' }}>Statutory Review:</span>
+                <span>Voter ID, DL, ECI Cert & Properties Queue</span>
+              </div>
+            </div>
+
+            <button type="button" className="button primary" onClick={onClose} style={{ marginTop: 12, padding: '0 24px' }}>
+              Done & Return to Login
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="mp-stepper-bar">
+              <button
+                type="button"
+                className={`mp-step-btn ${step === 1 ? 'active' : step > 1 ? 'completed' : ''}`}
+                onClick={() => setStep(1)}
+              >
+                <span className="mp-step-num">{step > 1 ? <Check size={11} /> : '1'}</span>
+                Constituency
+              </button>
+              <button
+                type="button"
+                className={`mp-step-btn ${step === 2 ? 'active' : step > 2 ? 'completed' : ''}`}
+                onClick={() => setStep(2)}
+              >
+                <span className="mp-step-num">{step > 2 ? <Check size={11} /> : '2'}</span>
+                Personal Profile
+              </button>
+              <button
+                type="button"
+                className={`mp-step-btn ${step === 3 ? 'active' : step > 3 ? 'completed' : ''}`}
+                onClick={() => setStep(3)}
+              >
+                <span className="mp-step-num">{step > 3 ? <Check size={11} /> : '3'}</span>
+                Statutory Documents
+              </button>
+              <button
+                type="button"
+                className={`mp-step-btn ${step === 4 ? 'active' : step > 4 ? 'completed' : ''}`}
+                onClick={() => setStep(4)}
+              >
+                <span className="mp-step-num">{step > 4 ? <Check size={11} /> : '4'}</span>
+                Assets & Properties ({form.immovable_properties.length})
+              </button>
+              <button
+                type="button"
+                className={`mp-step-btn ${step === 5 ? 'active' : ''}`}
+                onClick={() => setStep(5)}
+              >
+                <span className="mp-step-num">5</span>
+                Banking & Security
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+              <div className="mp-modal-body">
+                <div className="mp-form-section-title">
+                  <h3>
+                    {step === 1 && <><Globe2 size={16} /> Step 1: Parliamentary Representation</>}
+                    {step === 2 && <><UserRound size={16} /> Step 2: Personal Profile & Residence</>}
+                    {step === 3 && <><Award size={16} /> Step 3: Statutory Identity Credentials</>}
+                    {step === 4 && <><Home size={16} /> Step 4: Declared Properties & Assets</>}
+                    {step === 5 && <><LockKeyhole size={16} /> Step 5: Official Banking & Account Password</>}
+                  </h3>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      type="button"
+                      className="mp-prefill-btn"
+                      onClick={() => fillSampleDossier(1)}
+                      title="Auto-fill sample MP data for Baramati"
+                    >
+                      <Sparkles size={12} /> Sample: Baramati
+                    </button>
+                    <button
+                      type="button"
+                      className="mp-prefill-btn"
+                      onClick={() => fillSampleDossier(2)}
+                      title="Auto-fill sample MP data for Kannauj"
+                    >
+                      <Sparkles size={12} /> Sample: Kannauj
+                    </button>
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="login-error" style={{ marginBottom: 16 }}>
+                    <AlertTriangle size={16} /> {error}
+                  </div>
+                )}
+
+                {/* STEP 1: CONSTITUENCY */}
+                {step === 1 && (
+                  <div className="mp-form-grid-2">
+                    <div className="mp-field-group">
+                      <label>House of Parliament</label>
+                      <select
+                        className="mp-field-input"
+                        value={form.house}
+                        onChange={e => setForm(f => ({ ...f, house: e.target.value }))}
+                      >
+                        <option value="Lok Sabha">Lok Sabha (House of the People)</option>
+                        <option value="Rajya Sabha">Rajya Sabha (Council of States)</option>
+                      </select>
+                    </div>
+                    <div className="mp-field-group">
+                      <label>State / Union Territory</label>
+                      <input
+                        type="text"
+                        className="mp-field-input"
+                        placeholder="e.g., Maharashtra, Karnataka, Uttar Pradesh"
+                        value={form.state}
+                        onChange={e => setForm(f => ({ ...f, state: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="mp-field-group">
+                      <label>Parliamentary Constituency</label>
+                      <input
+                        type="text"
+                        className="mp-field-input"
+                        placeholder="e.g., Baramati, Kannauj, Bengaluru Rural"
+                        value={form.constituency}
+                        onChange={e => setForm(f => ({ ...f, constituency: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="mp-field-group">
+                      <label>Political Party / Affiliation</label>
+                      <input
+                        type="text"
+                        className="mp-field-input"
+                        placeholder="e.g., NCP, BJP, INC, Independent"
+                        value={form.political_party}
+                        onChange={e => setForm(f => ({ ...f, political_party: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="mp-field-group full-width">
+                      <label>Parliamentary Term</label>
+                      <input
+                        type="text"
+                        className="mp-field-input"
+                        value={form.term_label}
+                        onChange={e => setForm(f => ({ ...f, term_label: e.target.value }))}
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 2: PERSONAL PROFILE */}
+                {step === 2 && (
+                  <div className="mp-form-grid-2">
+                    <div className="mp-field-group">
+                      <label>Full Name (as per Gazette)</label>
+                      <input
+                        type="text"
+                        className="mp-field-input"
+                        placeholder="e.g., Supriya Sule"
+                        value={form.full_name}
+                        onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="mp-field-group">
+                      <label>Official Email (Login Identifier)</label>
+                      <input
+                        type="email"
+                        className="mp-field-input"
+                        placeholder="e.g., mp.name@parliament.gov.in"
+                        value={form.email}
+                        onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="mp-field-group">
+                      <label>Mobile Number (10 digits)</label>
+                      <input
+                        type="tel"
+                        pattern="[6-9][0-9]{9}"
+                        className="mp-field-input"
+                        placeholder="e.g., 9820011223"
+                        value={form.phone_number}
+                        onChange={e => setForm(f => ({ ...f, phone_number: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="mp-field-group">
+                      <label>Date of Birth</label>
+                      <input
+                        type="date"
+                        className="mp-field-input"
+                        value={form.dob}
+                        onChange={e => setForm(f => ({ ...f, dob: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="mp-field-group">
+                      <label>Gender</label>
+                      <select
+                        className="mp-field-input"
+                        value={form.gender}
+                        onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
+                      >
+                        <option value="Female">Female</option>
+                        <option value="Male">Male</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div className="mp-field-group">
+                      <label>Blood Group</label>
+                      <input
+                        type="text"
+                        className="mp-field-input"
+                        placeholder="e.g., B+, O+"
+                        value={form.blood_group}
+                        onChange={e => setForm(f => ({ ...f, blood_group: e.target.value }))}
+                      />
+                    </div>
+                    <div className="mp-field-group full-width">
+                      <label>Father's / Spouse's Full Name</label>
+                      <input
+                        type="text"
+                        className="mp-field-input"
+                        placeholder="e.g., Sharad Pawar"
+                        value={form.father_or_spouse_name}
+                        onChange={e => setForm(f => ({ ...f, father_or_spouse_name: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="mp-field-group full-width">
+                      <label>Permanent Constituency Residence Address</label>
+                      <textarea
+                        className="mp-field-input"
+                        placeholder="Complete postal address in constituency..."
+                        value={form.permanent_address}
+                        onChange={e => setForm(f => ({ ...f, permanent_address: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="mp-field-group full-width">
+                      <label>Present Delhi / MP Quarters Address</label>
+                      <textarea
+                        className="mp-field-input"
+                        placeholder="Official Delhi residence or liaison accommodation..."
+                        value={form.present_address}
+                        onChange={e => setForm(f => ({ ...f, present_address: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 3: STATUTORY DOCUMENTS */}
+                {step === 3 && (
+                  <div>
+                    <div className="mp-doc-alert">
+                      <ShieldCheck size={18} color="#b07d17" />
+                      <div>
+                        <strong>Statutory Requirement:</strong>
+                        <span> ECI winning certificates and government identity numbers are reconciled by Ministry auditors against official databases.</span>
+                      </div>
+                    </div>
+                    <div className="mp-form-grid-2">
+                      <div className="mp-field-group">
+                        <label>Voter ID (EPIC Card Number)</label>
+                        <input
+                          type="text"
+                          className="mp-field-input"
+                          placeholder="e.g., MH04192841"
+                          value={form.voter_id}
+                          onChange={e => setForm(f => ({ ...f, voter_id: e.target.value.toUpperCase() }))}
+                          required
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Electoral Roll Part & Serial No.</label>
+                        <input
+                          type="text"
+                          className="mp-field-input"
+                          placeholder="e.g., Part 210, Sl 405"
+                          value={form.voter_constituency_serial}
+                          onChange={e => setForm(f => ({ ...f, voter_constituency_serial: e.target.value }))}
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Driving License Number</label>
+                        <input
+                          type="text"
+                          className="mp-field-input"
+                          placeholder="e.g., MH12 19950004123"
+                          value={form.driving_license_no}
+                          onChange={e => setForm(f => ({ ...f, driving_license_no: e.target.value.toUpperCase() }))}
+                          required
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Driving License Issuing RTO</label>
+                        <input
+                          type="text"
+                          className="mp-field-input"
+                          placeholder="e.g., RTO Pune (MH-12)"
+                          value={form.driving_license_rto}
+                          onChange={e => setForm(f => ({ ...f, driving_license_rto: e.target.value }))}
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>ECI Winning Certificate No. (Form 21E)</label>
+                        <input
+                          type="text"
+                          className="mp-field-input"
+                          placeholder="e.g., ECI-MH-2024-FORM21E-035"
+                          value={form.winning_certificate_no}
+                          onChange={e => setForm(f => ({ ...f, winning_certificate_no: e.target.value }))}
+                          required
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Election Result Declaration Date</label>
+                        <input
+                          type="date"
+                          className="mp-field-input"
+                          value={form.winning_date}
+                          onChange={e => setForm(f => ({ ...f, winning_date: e.target.value }))}
+                          required
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Returning Officer Seal / Code</label>
+                        <input
+                          type="text"
+                          className="mp-field-input"
+                          placeholder="e.g., RO-MH-35-BARAMATI"
+                          value={form.returning_officer_code}
+                          onChange={e => setForm(f => ({ ...f, returning_officer_code: e.target.value }))}
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Community / Caste Certificate No.</label>
+                        <input
+                          type="text"
+                          className="mp-field-input"
+                          placeholder="e.g., REV-MH-PUN-2015-89102"
+                          value={form.community_certificate_no}
+                          onChange={e => setForm(f => ({ ...f, community_certificate_no: e.target.value }))}
+                          required
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Social Category</label>
+                        <select
+                          className="mp-field-input"
+                          value={form.community_category}
+                          onChange={e => setForm(f => ({ ...f, community_category: e.target.value }))}
+                        >
+                          <option value="General">General</option>
+                          <option value="OBC">OBC (Other Backward Classes)</option>
+                          <option value="SC">SC (Scheduled Caste)</option>
+                          <option value="ST">ST (Scheduled Tribe)</option>
+                          <option value="EWS">EWS (Economically Weaker Section)</option>
+                        </select>
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Community Issuing Revenue Authority</label>
+                        <input
+                          type="text"
+                          className="mp-field-input"
+                          placeholder="e.g., Sub-Divisional Officer / Tahsildar"
+                          value={form.community_issuing_authority}
+                          onChange={e => setForm(f => ({ ...f, community_issuing_authority: e.target.value }))}
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Birth Certificate Number</label>
+                        <input
+                          type="text"
+                          className="mp-field-input"
+                          placeholder="e.g., MC-PUN-1969-1092"
+                          value={form.birth_certificate_no}
+                          onChange={e => setForm(f => ({ ...f, birth_certificate_no: e.target.value }))}
+                          required
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Birth Registration Place</label>
+                        <input
+                          type="text"
+                          className="mp-field-input"
+                          placeholder="e.g., Pune, Maharashtra"
+                          value={form.birth_place}
+                          onChange={e => setForm(f => ({ ...f, birth_place: e.target.value }))}
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Income Tax PAN (10 characters)</label>
+                        <input
+                          type="text"
+                          pattern="[A-Z]{5}[0-9]{4}[A-Z]"
+                          maxLength={10}
+                          className="mp-field-input"
+                          placeholder="e.g., AASPS1969M"
+                          value={form.pan_number}
+                          onChange={e => setForm(f => ({ ...f, pan_number: e.target.value.toUpperCase() }))}
+                          required
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Aadhaar Number (12 digits)</label>
+                        <input
+                          type="text"
+                          pattern="\d{12}"
+                          maxLength={12}
+                          className="mp-field-input"
+                          placeholder="e.g., 612345678901"
+                          value={form.aadhaar_number}
+                          onChange={e => setForm(f => ({ ...f, aadhaar_number: e.target.value }))}
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 4: PROPERTIES & ASSETS */}
+                {step === 4 && (
+                  <div>
+                    <div className="mp-props-card">
+                      <div className="mp-props-header">
+                        <h4>Immovable Properties Owned (Land, Buildings & Plots)</h4>
+                        <button type="button" className="mp-add-prop-btn" onClick={addProp}>
+                          <Plus size={13} /> Add Property
+                        </button>
+                      </div>
+
+                      {form.immovable_properties.length === 0 ? (
+                        <p style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: 12 }}>
+                          No immovable properties added. Click "Add Property" to declare assets.
+                        </p>
+                      ) : (
+                        <table className="mp-props-table">
+                          <thead>
+                            <tr>
+                              <th style={{ width: '25%' }}>Type</th>
+                              <th style={{ width: '30%' }}>Location / Survey No.</th>
+                              <th style={{ width: '15%' }}>Area</th>
+                              <th style={{ width: '15%' }}>Value (₹ Lakhs)</th>
+                              <th style={{ width: '10%' }}>Owner</th>
+                              <th style={{ width: '5%' }}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {form.immovable_properties.map((prop, idx) => (
+                              <tr key={idx}>
+                                <td>
+                                  <select
+                                    value={prop.property_type}
+                                    onChange={e => updateProp(idx, 'property_type', e.target.value)}
+                                  >
+                                    <option value="Agricultural Land">Agricultural Land</option>
+                                    <option value="Residential House">Residential House / Bungalow</option>
+                                    <option value="Residential Flat">Residential Flat</option>
+                                    <option value="Commercial Building">Commercial Building</option>
+                                    <option value="Commercial Plot">Commercial Plot</option>
+                                    <option value="Industrial Shed">Industrial Shed</option>
+                                  </select>
+                                </td>
+                                <td>
+                                  <input
+                                    type="text"
+                                    placeholder="Survey No., Village/City"
+                                    value={prop.location}
+                                    onChange={e => updateProp(idx, 'location', e.target.value)}
+                                    required
+                                  />
+                                </td>
+                                <td>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. 5 Acres, 3000 sq.ft"
+                                    value={prop.area_sqft || ''}
+                                    onChange={e => updateProp(idx, 'area_sqft', e.target.value)}
+                                  />
+                                </td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    value={prop.estimated_value_lakh}
+                                    onChange={e => updateProp(idx, 'estimated_value_lakh', Number(e.target.value))}
+                                    required
+                                  />
+                                </td>
+                                <td>
+                                  <select
+                                    value={prop.ownership_status}
+                                    onChange={e => updateProp(idx, 'ownership_status', e.target.value)}
+                                  >
+                                    <option value="Self">Self</option>
+                                    <option value="Spouse">Spouse</option>
+                                    <option value="Joint">Joint</option>
+                                    <option value="Dependent">Dependent</option>
+                                  </select>
+                                </td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeProp(idx)}
+                                    style={{ background: 'none', border: 'none', color: '#ae3d36', cursor: 'pointer' }}
+                                    aria-label="Remove property"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+
+                    <div style={{ marginTop: 18 }} className="mp-form-grid-2">
+                      <div className="mp-field-group">
+                        <label>Bank Deposits & Liquid Savings (₹ Lakhs)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          className="mp-field-input"
+                          value={form.movable_assets.bank_deposits_lakh}
+                          onChange={e => setForm(f => ({ ...f, movable_assets: { ...f.movable_assets, bank_deposits_lakh: Number(e.target.value) } }))}
+                          required
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Gold & Precious Jewellery (Grams)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          className="mp-field-input"
+                          value={form.movable_assets.gold_jewellery_grams}
+                          onChange={e => setForm(f => ({ ...f, movable_assets: { ...f.movable_assets, gold_jewellery_grams: Number(e.target.value) } }))}
+                          required
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Investments, Bonds & Shares (₹ Lakhs)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          className="mp-field-input"
+                          value={form.movable_assets.investments_shares_lakh}
+                          onChange={e => setForm(f => ({ ...f, movable_assets: { ...f.movable_assets, investments_shares_lakh: Number(e.target.value) } }))}
+                          required
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Registered Motor Vehicles</label>
+                        <input
+                          type="text"
+                          className="mp-field-input"
+                          placeholder="e.g., Toyota Fortuner, Scorpio"
+                          value={form.movable_assets.vehicles_summary || ''}
+                          onChange={e => setForm(f => ({ ...f, movable_assets: { ...f.movable_assets, vehicles_summary: e.target.value } }))}
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Total Declared Net Worth (₹ Lakhs)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          className="mp-field-input"
+                          value={form.total_assets_lakh}
+                          onChange={e => setForm(f => ({ ...f, total_assets_lakh: Number(e.target.value) }))}
+                          required
+                        />
+                      </div>
+                      <div className="mp-field-group">
+                        <label>Declared Liabilities / Loans (₹ Lakhs)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          className="mp-field-input"
+                          value={form.liabilities_lakh}
+                          onChange={e => setForm(f => ({ ...f, liabilities_lakh: Number(e.target.value) }))}
+                          required
+                        />
+                      </div>
+                      <div className="mp-field-group full-width">
+                        <label>ECI Form 26 Affidavit URL / Archive Reference</label>
+                        <input
+                          type="url"
+                          className="mp-field-input"
+                          placeholder="https://affidavit.eci.gov.in/..."
+                          value={form.affidavit_eci_ref || ''}
+                          onChange={e => setForm(f => ({ ...f, affidavit_eci_ref: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 5: BANKING & SECURITY */}
+                {step === 5 && (
+                  <div className="mp-form-grid-2">
+                    <div className="mp-field-group full-width">
+                      <label>Designated Official Bank Branch</label>
+                      <input
+                        type="text"
+                        className="mp-field-input"
+                        placeholder="e.g., State Bank of India, Parliament House Branch"
+                        value={form.bank_name}
+                        onChange={e => setForm(f => ({ ...f, bank_name: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="mp-field-group">
+                      <label>Bank Account Number (MPLADS Account)</label>
+                      <input
+                        type="text"
+                        minLength={8}
+                        maxLength={30}
+                        className="mp-field-input"
+                        placeholder="e.g., 20918239012"
+                        value={form.bank_account_number}
+                        onChange={e => setForm(f => ({ ...f, bank_account_number: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="mp-field-group">
+                      <label>Bank IFSC Code (11 alphanumeric)</label>
+                      <input
+                        type="text"
+                        pattern="^[A-Z]{4}0[A-Z0-9]{6}$"
+                        maxLength={11}
+                        className="mp-field-input"
+                        placeholder="e.g., SBIN0000691"
+                        value={form.bank_ifsc}
+                        onChange={e => setForm(f => ({ ...f, bank_ifsc: e.target.value.toUpperCase() }))}
+                        required
+                      />
+                    </div>
+                    <div className="mp-field-group full-width">
+                      <label>Public Financial Management System (PFMS) MP Code <small>(optional)</small></label>
+                      <input
+                        type="text"
+                        className="mp-field-input"
+                        placeholder="e.g., PFMS-MP-00912"
+                        value={form.pfms_code}
+                        onChange={e => setForm(f => ({ ...f, pfms_code: e.target.value }))}
+                      />
+                    </div>
+                    <div className="mp-field-group full-width">
+                      <label>Desired Account Password (min. 8 characters)</label>
+                      <input
+                        type="password"
+                        minLength={8}
+                        className="mp-field-input"
+                        placeholder="Set your secure MP portal access password..."
+                        value={form.password}
+                        onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                        required
+                      />
+                      <small style={{ color: 'var(--muted)', marginTop: 4 }}>
+                        Upon Ministry approval, you will log into Sentinel AI using your registered email and this password.
+                      </small>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <footer className="mp-modal-footer">
+                <div>
+                  {step > 1 && (
+                    <button
+                      type="button"
+                      className="mp-modal-btn secondary"
+                      onClick={() => setStep((s: 1 | 2 | 3 | 4 | 5) => (s - 1) as any)}
+                    >
+                      <ChevronLeft size={16} /> Back
+                    </button>
+                  )}
+                </div>
+                <div className="mp-footer-actions">
+                  <button type="button" className="mp-modal-btn secondary" onClick={onClose}>
+                    Cancel
+                  </button>
+                  {step < 5 ? (
+                    <button
+                      type="button"
+                      className="mp-modal-btn primary"
+                      onClick={() => setStep((s: 1 | 2 | 3 | 4 | 5) => (s + 1) as any)}
+                    >
+                      Continue <ChevronRight size={16} />
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      className="mp-modal-btn primary"
+                      disabled={loading}
+                    >
+                      {loading ? 'Transmitting to Ministry…' : 'Submit Dossier for Ministry Approval'}
+                      <CheckCircle2 size={16} />
+                    </button>
+                  )}
+                </div>
+              </footer>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function MPStatusTrackModal({ onClose }: { onClose: () => void }) {
+  const [identifier, setIdentifier] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<{
+    id: string
+    email: string
+    full_name: string
+    constituency: string
+    status: 'pending' | 'approved' | 'rejected'
+    created_at: string
+    reviewed_at: string | null
+    reviewer_remarks: string | null
+    rejection_reason: string | null
+  } | null>(null)
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!identifier.trim()) return
+    setLoading(true)
+    setError('')
+    setResult(null)
+    try {
+      const isEmail = identifier.includes('@')
+      const data = await api.checkMPRegistrationStatus(
+        isEmail ? undefined : identifier.trim(),
+        isEmail ? identifier.trim() : undefined,
+      )
+      setResult(data)
+    } catch (err: any) {
+      setError(err?.message || 'No matching application found.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="mp-modal-backdrop">
+      <div className="mp-modal-box" style={{ maxWidth: 540 }}>
+        <header className="mp-modal-header">
+          <div className="mp-modal-header-left">
+            <div className="mp-modal-badge-icon">
+              <FileSearch size={22} />
+            </div>
+            <div>
+              <h2>Track MP Application Status</h2>
+              <p>Check Ministry of Statistics & PI review progress</p>
+            </div>
+          </div>
+          <button className="mp-close-btn" onClick={onClose} aria-label="Close dialog">
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="mp-modal-body">
+          <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <label style={{ font: '700 11px "Manrope"', color: 'var(--muted)', textTransform: 'uppercase' }}>
+              Application Reference ID or Registered Official Email
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="text"
+                className="mp-field-input"
+                style={{ flex: 1 }}
+                placeholder="e.g. MP-REG-2026-0841 or mp@sentinel.gov.in"
+                value={identifier}
+                onChange={e => setIdentifier(e.target.value)}
+                required
+              />
+              <button type="submit" className="button primary" disabled={loading}>
+                {loading ? 'Checking…' : 'Search'}
+              </button>
+            </div>
+          </form>
+
+          {error && (
+            <div className="login-error" style={{ marginTop: 16 }}>
+              <AlertTriangle size={16} /> {error}
+            </div>
+          )}
+
+          {result && (
+            <div style={{ marginTop: 20, padding: 18, background: 'var(--canvas)', borderRadius: 14, border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <code style={{ fontSize: 12, fontWeight: 700 }}>{result.id}</code>
+                <span className={`mp-status-pill ${result.status}`}>{result.status}</span>
+              </div>
+              <h3 style={{ margin: 0, font: '800 17px "Manrope"' }}>{result.full_name}</h3>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>
+                Constituency: <strong>{result.constituency}</strong> · Email: {result.email}
+              </p>
+              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10, fontSize: 11.5, color: 'var(--text)' }}>
+                <div>Submitted: {new Date(result.created_at).toLocaleString('en-IN')}</div>
+                {result.reviewed_at && <div>Reviewed: {new Date(result.reviewed_at).toLocaleString('en-IN')}</div>}
+                {result.reviewer_remarks && (
+                  <div style={{ marginTop: 6, color: '#166552', fontWeight: 600 }}>
+                    Ministry Remarks: {result.reviewer_remarks}
+                  </div>
+                )}
+                {result.rejection_reason && (
+                  <div style={{ marginTop: 6, color: '#ae3d36', fontWeight: 600 }}>
+                    Rejection Reason: {result.rejection_reason}
+                  </div>
+                )}
+                {result.status === 'approved' && (
+                  <div style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(39, 128, 108, 0.15)', borderRadius: 8, color: '#166552', fontWeight: 600 }}>
+                    ✓ Your MP account is active! You can now log in from the login screen with your email and password.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <footer className="mp-modal-footer">
+          <div />
+          <button type="button" className="button secondary" onClick={onClose}>
+            Close
+          </button>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
 function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: ApiUser) => void }) {
   const [email, setEmail] = useState('mp@sentinel.gov.in')
   const [password, setPassword] = useState('Sentinel@2026')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showRegisterModal, setShowRegisterModal] = useState(false)
+  const [showTrackModal, setShowTrackModal] = useState(false)
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setLoading(true); setError('')
@@ -3606,7 +5390,36 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: ApiUser) => 
       <button className="button primary login-submit" disabled={loading}>{loading ? 'Verifying access…' : 'Sign in securely'}<ChevronRight size={18}/></button>
       <div className="demo-note"><strong>Demonstration credentials</strong><span>Password for all roles: <code>Sentinel@2026</code>. Click any role pill above to populate.</span></div>
       <small className="privacy-note"><LockKeyhole size={13}/> Access is role-scoped and recorded in the security audit trail.</small>
+
+      {/* Member of Parliament Onboarding Application Card */}
+      <div className="mp-apply-card">
+        <div className="mp-apply-card-header">
+          <div className="mp-apply-icon"><Landmark size={18} /></div>
+          <div className="mp-apply-text">
+            <strong>Member of Parliament Onboarding</strong>
+            <p>New MP account requests are securely routed to the Ministry of Statistics & PI for statutory dossier verification & approval.</p>
+          </div>
+        </div>
+        <div className="mp-apply-actions">
+          <button type="button" className="mp-apply-btn" onClick={() => setShowRegisterModal(true)}>
+            <BadgeCheck size={14} /> Apply for MP Access
+          </button>
+          <button type="button" className="mp-track-btn" onClick={() => setShowTrackModal(true)}>
+            <FileSearch size={14} /> Track Status
+          </button>
+        </div>
+      </div>
     </form></section>
+
+    {showRegisterModal && (
+      <MPRegistrationModal
+        onClose={() => setShowRegisterModal(false)}
+        onApplicationSubmitted={() => {}}
+      />
+    )}
+    {showTrackModal && (
+      <MPStatusTrackModal onClose={() => setShowTrackModal(false)} />
+    )}
   </main>
 }
 
