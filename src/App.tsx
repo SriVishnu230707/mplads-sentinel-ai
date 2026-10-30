@@ -707,6 +707,25 @@ function Overview({
       </section>
     )}
 
+    <section className="command-hero" aria-label="Current oversight snapshot">
+      <div className="command-hero-copy">
+        <span className="command-hero-kicker"><span className="command-hero-live" /> {roleLiveEyebrow(role)}</span>
+        <h2>Follow the evidence<span>.</span></h2>
+        <p>See the signals behind the numbers, then move from risk to review with a clear trail of decisions.</p>
+        <div className="command-hero-actions">
+          <button type="button" className="command-hero-primary" onClick={onNavigateAlerts}>Review risk alerts <ArrowRight size={16} /></button>
+          <button type="button" className="command-hero-secondary" onClick={onNavigateMap}>Explore the map <MapPin size={16} /></button>
+        </div>
+      </div>
+      <div className="command-hero-visual" aria-label="Key metrics for your authorized scope">
+        <div className="command-orbit command-orbit-one" /><div className="command-orbit command-orbit-two" />
+        <div className="command-orbit-point point-a" /><div className="command-orbit-point point-b" /><div className="command-orbit-point point-c" />
+        <div className="command-visual-core"><span>WORKS IN SCOPE</span><strong>{summary ? summary.active_works.toLocaleString('en-IN') : '—'}</strong><small>{summary ? `${summary.delayed_works} delayed works` : 'Loading your portfolio'}</small></div>
+        <div className="command-float-card command-float-risk"><AlertTriangle size={15} /><span><strong>{summary ? summary.high_risk_works : '—'}</strong> high-risk works</span></div>
+        <div className="command-float-card command-float-spend"><IndianRupee size={15} /><span><strong>{utilization}</strong> funds utilized</span></div>
+      </div>
+    </section>
+
     <section className="metrics-grid">
       <Metric icon={FolderKanban} label="Active works" value={summary ? summary.active_works.toLocaleString('en-IN') : '—'} delta={summary ? String(summary.delayed_works) : '—'} note="delayed works in your scope" color="teal" onClick={onNavigateProjects} />
       <Metric icon={IndianRupee} label="Expenditure monitored" value={summary ? formatCrore(summary.expenditure_lakh / 100) : '—'} delta={utilization} note={summary ? `of ${formatCrore(summary.sanctioned_lakh / 100)} sanctioned` : 'loading authorized portfolio'} color="blue" onClick={onNavigateProjects} />
@@ -5437,3 +5456,4 @@ function App() {
 }
 
 export default App
+
